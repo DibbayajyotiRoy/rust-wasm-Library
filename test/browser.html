@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DiffCore Browser Test</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0f;
+      color: #e0e0e0;
+      padding: 2rem;
+      line-height: 1.6;
+    }
+    h1 {
+      color: #7c3aed;
+      margin-bottom: 1rem;
+    }
+    .test {
+      background: #1a1a24;
+      border-radius: 8px;
+      padding: 1rem;
+      margin: 1rem 0;
+      border-left: 3px solid #4a4a5a;
+    }
+    .test.pass {
+      border-left-color: #22c55e;
+    }
+    .test.fail {
+      border-left-color: #ef4444;
+    }
+    .test-name {
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    .test-result {
+      font-family: monospace;
+      font-size: 0.9rem;
+      color: #a0a0a0;
+    }
+    #status {
+      padding: 1rem;
+      background: #1a1a24;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+    }
+    .loading {
+      color: #fbbf24;
+    }
+    .success {
+      color: #22c55e;
+    }
+    .error {
+      color: #ef4444;
+    }
+  </style>
+</head>
+<body>
+  <h1>DiffCore Browser Test</h1>
+  <div id="status" class="loading">Loading WASM module...</div>
+  <div id="tests"></div>
+
+  <script type="module">
+    const WASM_PATH = '../pkg/diffcore.wasm';
+    const statusEl = document.getElementById('status');
+    const testsEl = document.getElementById('tests');
+
+    function addTest(name, passed, result) {
+      const div = document.createElement('div');
+      div.className = `test ${passed ? 'pass' : 'fail'}`;
+      div.innerHTML = `
+        <div class="test-name">${passed ? '✓' : '✗'} ${name}</div>
+        <div class="test-result">${result}</div>
+      `;
+      testsEl.appendChild(div);
+    }
+
+    async function runTests() {
+      try {
+        // Load WASM
+        const response = await fetch(WASM_PATH);
+        const wasmBuffer = await response.arrayBuffer();
+        const module = await WebAssembly.compile(wasmBuffer);
+        const instance = await WebAssembly.instantiate(module, { env: {} });
+        const exports = instance.exports;
+
+        statusEl.textContent = `WASM loaded (${(wasmBuffer.byteLength / 1024).toFixed(1)} KB)`;
+        statusEl.className = '';
+
+        // Test 1: Create/destroy engine
+        {
+          const enginePtr = exports.create_engine(0, 0);
+          const created = enginePtr !== 0;
+          const status = exports.destroy_engine(enginePtr);
+          const destroyed = status === 0;
+          
+          addTest(
+            'Create/Destroy Engine',
+            created && destroyed,
+            `Created: ${created}, Destroyed: ${destroyed}`
+          );
+        }
+
+        // Test 2: Simple diff
+        {
+          const memory = exports.memory;
+          memory.grow(10);
+          
+          const enginePtr = exports.create_engine(0, 0);
+          const leftJson = '{"a": 1}';
+          const rightJson = '{"a": 2}';
+          
+          const leftBytes = new TextEncoder().encode(leftJson);
+          const rightBytes = new TextEncoder().encode(rightJson);
+          
+          const memView = new Uint8Array(memory.buffer);
+          
+          const leftOffset = 1024;
+          memView.set(leftBytes, leftOffset);
+          const leftStatus = exports.push_left(enginePtr, leftOffset, leftBytes.length);
+          
+          const rightOffset = 2048;
+          memView.set(rightBytes, rightOffset);
+          const rightStatus = exports.push_right(enginePtr, rightOffset, rightBytes.length);
+          
+          const resultPtr = exports.finalize(enginePtr);
+          const resultLen = exports.get_result_len(enginePtr);
+          
+          const resultView = new DataView(memory.buffer, resultPtr, resultLen);
+          const entryCount = resultView.getUint32(4, true);
+          
+          exports.destroy_engine(enginePtr);
+          
+          addTest(
+            'Simple Diff',
+            leftStatus === 0 && rightStatus === 0 && resultPtr !== 0 && entryCount > 0,
+            `Left: ${leftStatus}, Right: ${rightStatus}, Entries: ${entryCount}`
+          );
+        }
+
+        // Test 3: Performance
+        {
+          const memory = exports.memory;
+          memory.grow(50);
+          
+          // Generate larger test data
+          const obj = {};
+          for (let i = 0; i < 1000; i++) {
+            obj[`key_${i}`] = { value: i, data: `string_${i}` };
+          }
+          const leftJson = JSON.stringify(obj);
+          obj.key_0.value = 999;
+          obj.new_key = { added: true };
+          const rightJson = JSON.stringify(obj);
+          
+          const leftBytes = new TextEncoder().encode(leftJson);
+          const rightBytes = new TextEncoder().encode(rightJson);
+          
+          const start = performance.now();
+          
+          const enginePtr = exports.create_engine(0, 0);
+          const memView = new Uint8Array(memory.buffer);
+          
+          memView.set(leftBytes, 1024);
+          exports.push_left(enginePtr, 1024, leftBytes.length);
+          
+          memView.set(rightBytes, 1024 + leftBytes.length + 16);
+          exports.push_right(enginePtr, 1024 + leftBytes.length + 16, rightBytes.length);
+          
+          exports.finalize(enginePtr);
+          const elapsed = performance.now() - start;
+          
+          exports.destroy_engine(enginePtr);
+          
+          addTest(
+            'Performance (1000 keys)',
+            elapsed < 100, // Should be under 100ms
+            `${elapsed.toFixed(2)}ms for ${(leftBytes.length / 1024).toFixed(1)}KB`
+          );
+        }
+
+        statusEl.textContent = 'All tests completed';
+        statusEl.className = 'success';
+
+      } catch (err) {
+        statusEl.textContent = `Error: ${err.message}`;
+        statusEl.className = 'error';
+        console.error(err);
+      }
+    }
+
+    runTests();
+  </script>
+</body>
+</html>

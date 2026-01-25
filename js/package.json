@@ -1,0 +1,42 @@
+{
+  "name": "diffcore",
+  "version": "0.1.0",
+  "description": "High-performance streaming JSON diff engine powered by WebAssembly",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./worker": {
+      "import": "./dist/worker.js",
+      "types": "./dist/worker.d.ts"
+    },
+    "./wasm": "./dist/diffcore.wasm"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc && cp ../pkg/diffcore.wasm dist/",
+    "test": "node --test test/",
+    "bench": "node ../bench/run.mjs"
+  },
+  "keywords": [
+    "json",
+    "diff",
+    "wasm",
+    "webassembly",
+    "streaming",
+    "performance"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

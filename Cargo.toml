@@ -1,0 +1,26 @@
+[package]
+name = "diffcore"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance streaming JSON diff engine compiled to WebAssembly"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+
+[dependencies]
+rustc-hash = "2.1.0"
+
+[dev-dependencies]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-O4"]
