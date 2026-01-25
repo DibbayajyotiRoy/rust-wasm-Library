@@ -43,23 +43,35 @@ pub struct CompactParser {
     expecting_key: bool,
     max_object_keys: u32,
     key_count: u32,
+    /// Maps PathId -> index in tokens vector for O(1) diff lookups
+    value_index: rustc_hash::FxHashMap<PathId, usize>,
+    total_bytes: u32,
 }
 
 impl CompactParser {
-    pub fn new(max_object_keys: u32) -> Self {
+    pub fn new(max_object_keys: u32, mode: crate::config::ComputeMode) -> Self {
+        let (token_cap, val_cap) = match mode {
+            crate::config::ComputeMode::Throughput => (16384, 65536),
+            crate::config::ComputeMode::Edge => (512, 1024),
+            _ => (2048, 8192), // Latency/Default
+        };
+
         Self {
-            tokens: Vec::with_capacity(2048),
-            raw_values: Vec::with_capacity(8192),
+            tokens: Vec::with_capacity(token_cap),
+            raw_values: Vec::with_capacity(val_cap),
             current_path_id: crate::path::ROOT_PATH_ID,
             path_stack: Vec::with_capacity(32),
             array_indices: Vec::new(),
             expecting_key: false,
             max_object_keys,
             key_count: 0,
+            value_index: rustc_hash::FxHashMap::with_capacity_and_hasher(token_cap / 2, Default::default()),
+            total_bytes: 0,
         }
     }
 
     pub fn parse(&mut self, json: &[u8], arena: &mut PathArena) -> Result<(), crate::parser::ParseError> {
+        self.total_bytes += json.len() as u32;
         let mut pos = 0;
         let len = json.len();
         while pos < len {
@@ -133,7 +145,28 @@ impl CompactParser {
         Ok(())
     }
 
+    pub fn total_bytes(&self) -> u32 { self.total_bytes }
+    pub fn value_index(&self) -> &rustc_hash::FxHashMap<PathId, usize> { &self.value_index }
+    pub fn tokens(&self) -> &[CompactToken] { &self.tokens }
+    pub fn raw_values(&self) -> &[u8] { &self.raw_values }
+
+    pub fn clear(&mut self) {
+        self.tokens.clear();
+        self.raw_values.clear();
+        self.current_path_id = crate::path::ROOT_PATH_ID;
+        self.path_stack.clear();
+        self.array_indices.clear();
+        self.expecting_key = false;
+        self.key_count = 0;
+        self.value_index.clear();
+        self.total_bytes = 0;
+    }
+
     fn push_token(&mut self, path_id: PathId, event: CompactEvent, hash: u64, offset: u32, len: u32) {
+        let token_idx = self.tokens.len();
+        if event == CompactEvent::Value {
+            self.value_index.insert(path_id, token_idx);
+        }
         self.tokens.push(CompactToken {
             path_id,
             event,

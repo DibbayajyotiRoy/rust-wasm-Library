@@ -13,6 +13,21 @@ pub enum ArrayDiffMode {
     Full = 2,
 }
 
+/// Compute mode determines the optimization target.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ComputeMode {
+    /// Balanced throughput and latency.
+    #[default]
+    Latency = 0,
+    /// Optimize for large documents (throughput).
+    Throughput = 1,
+    /// Strict memory bounds for Edge/IoT.
+    Edge = 2,
+    /// Unbounded streaming (advanced).
+    Streaming = 3,
+}
+
 impl ArrayDiffMode {
     pub fn from_u8(v: u8) -> Option<Self> {
         match v {
@@ -47,6 +62,9 @@ pub struct EngineConfig {
 
     /// Maximum array size for Full mode. Larger arrays fall back to Index.
     pub max_full_array_size: u32,
+
+    /// Optimization target.
+    pub compute_mode: ComputeMode,
 }
 
 impl Default for EngineConfig {
@@ -58,6 +76,7 @@ impl Default for EngineConfig {
             array_diff_mode: ArrayDiffMode::Index,
             hash_window_size: 64,
             max_full_array_size: 1024,
+            compute_mode: ComputeMode::Latency,
         }
     }
 }
@@ -72,6 +91,7 @@ impl EngineConfig {
             array_diff_mode: ArrayDiffMode::Index,
             hash_window_size: 32,
             max_full_array_size: 512,
+            compute_mode: ComputeMode::Edge,
         }
     }
 
@@ -79,15 +99,16 @@ impl EngineConfig {
     ///
     /// Format (little-endian):
     /// ```text
-    /// [u32 max_memory_bytes]
-    /// [u32 max_input_size]
-    /// [u32 max_object_keys]
-    /// [u8  array_diff_mode]
-    /// [u16 hash_window_size]
-    /// [u32 max_full_array_size]
+    /// [u32 max_memory_bytes]    (0-3)
+    /// [u32 max_input_size]      (4-7)
+    /// [u32 max_object_keys]     (8-11)
+    /// [u8  array_diff_mode]     (12)
+    /// [u16 hash_window_size]    (13-14)
+    /// [u32 max_full_array_size] (15-18)
+    /// [u8  compute_mode]        (19)
     /// ```
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, ConfigError> {
-        if bytes.len() < 19 {
+        if bytes.len() < 20 {
             return Err(ConfigError::TooShort);
         }
 
@@ -98,6 +119,14 @@ impl EngineConfig {
             .ok_or(ConfigError::InvalidArrayMode)?;
         let hash_window_size = u16::from_le_bytes([bytes[13], bytes[14]]);
         let max_full_array_size = u32::from_le_bytes([bytes[15], bytes[16], bytes[17], bytes[18]]);
+        
+        let compute_mode = match bytes[19] {
+            0 => ComputeMode::Latency,
+            1 => ComputeMode::Throughput,
+            2 => ComputeMode::Edge,
+            3 => ComputeMode::Streaming,
+            _ => return Err(ConfigError::InvalidLimits), // Reuse for invalid mode
+        };
 
         // Validate bounds
         if max_memory_bytes == 0 || max_input_size == 0 {
@@ -115,18 +144,20 @@ impl EngineConfig {
             array_diff_mode,
             hash_window_size,
             max_full_array_size,
+            compute_mode,
         })
     }
 
     /// Serialize configuration to binary format.
-    pub fn to_bytes(&self) -> [u8; 19] {
-        let mut buf = [0u8; 19];
+    pub fn to_bytes(&self) -> [u8; 20] {
+        let mut buf = [0u8; 20];
         buf[0..4].copy_from_slice(&self.max_memory_bytes.to_le_bytes());
         buf[4..8].copy_from_slice(&self.max_input_size.to_le_bytes());
         buf[8..12].copy_from_slice(&self.max_object_keys.to_le_bytes());
         buf[12] = self.array_diff_mode as u8;
         buf[13..15].copy_from_slice(&self.hash_window_size.to_le_bytes());
         buf[15..19].copy_from_slice(&self.max_full_array_size.to_le_bytes());
+        buf[19] = self.compute_mode as u8;
         buf
     }
 }

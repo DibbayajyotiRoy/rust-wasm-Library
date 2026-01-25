@@ -7,11 +7,13 @@
 //! - finalize() seals arena — any push after returns EngineSealed
 
 use crate::diff::DiffOp;
-use crate::path::{JsonPath, PathInterner};
+use crate::path::{SegmentId, SegmentKind, PathInterner};
+use std::fmt::Write;
 
 /// Binary output format version.
 /// Using semantic versioning: major.minor as u16.u16
-pub const FORMAT_VERSION_MAJOR: u16 = 1;
+/// v2.0: Symbol-based output (PathId + Raw Offsets)
+pub const FORMAT_VERSION_MAJOR: u16 = 2;
 pub const FORMAT_VERSION_MINOR: u16 = 0;
 
 /// Result arena for diff output.
@@ -33,19 +35,20 @@ pub struct ResultArena {
 impl ResultArena {
     /// Create a new result arena with the given maximum size.
     pub fn new(max_size: u32) -> Self {
-        // Pre-allocate header space
-        // Header: [u16 major][u16 minor][u32 entry_count]
-        let mut buffer = Vec::with_capacity(8);
+        // Header v2 (16 bytes): 
+        // [u16 major][u16 minor][u32 entry_count][u64 total_len]
+        let mut buffer = Vec::with_capacity(16);
         buffer.extend_from_slice(&FORMAT_VERSION_MAJOR.to_le_bytes());
         buffer.extend_from_slice(&FORMAT_VERSION_MINOR.to_le_bytes());
-        buffer.extend_from_slice(&0u32.to_le_bytes()); // Placeholder for entry count
+        buffer.extend_from_slice(&0u32.to_le_bytes()); // entry count
+        buffer.extend_from_slice(&0u64.to_le_bytes()); // total len
 
         Self {
             buffer,
             max_size: max_size as usize,
             sealed: false,
             entry_count: 0,
-            data_offset: 8,
+            data_offset: 16,
         }
     }
 
@@ -56,10 +59,22 @@ impl ResultArena {
 
     /// Seal the arena. No more writes allowed after this.
     pub fn seal(&mut self) {
-        // Update entry count in header
+        // Update entry count (offset 4) and total len (offset 8) in header
         let count_bytes = self.entry_count.to_le_bytes();
         self.buffer[4..8].copy_from_slice(&count_bytes);
+
+        let total_len = self.buffer.len() as u64;
+        self.buffer[8..16].copy_from_slice(&total_len.to_le_bytes());
+
         self.sealed = true;
+    }
+
+    /// Reset the arena for reuse without re-allocating.
+    pub fn clear(&mut self) {
+        self.buffer.truncate(8); // Keep version and entry count placeholder
+        self.buffer[4..8].copy_from_slice(&0u32.to_le_bytes());
+        self.sealed = false;
+        self.entry_count = 0;
     }
 
     /// Check if the arena is sealed.
@@ -116,57 +131,35 @@ impl ResultArena {
         Ok(())
     }
 
-    pub fn write_entry_parts(
+    pub fn write_entry_v2(
         &mut self,
         op: DiffOp,
-        segments: &[SegmentId],
-        interner: &PathInterner,
-        left: Option<&[u8]>,
-        right: Option<&[u8]>,
+        path_id: crate::path::PathId,
+        left_val: (u32, u32),
+        right_val: (u32, u32),
     ) -> Result<(), ArenaError> {
         if self.sealed { return Err(ArenaError::Sealed); }
 
-        // 1. Calculate path length without a temporary string
-        let mut path_len = 0;
-        for (i, &seg_id) in segments.iter().enumerate() {
-            if let Some((kind, bytes)) = interner.resolve(seg_id) {
-                if i > 0 && kind == SegmentKind::Key { path_len += 1; } // dot
-                if kind == SegmentKind::Index { path_len += 2; } // brackets
-                path_len += bytes.len();
-            }
-        }
-
-        let left_bytes = left.unwrap_or(&[]);
-        let right_bytes = right.unwrap_or(&[]);
-
-        let entry_size = 1 + 4 + path_len + 4 + left_bytes.len() + 4 + right_bytes.len();
-        let aligned_size = (entry_size + 7) & !7;
+        // Entry format v2: 24 bytes (8-aligned)
+        // [u8 op][u32 path_id][u32 l_off][u32 l_len][u32 r_off][u32 r_len][u8 padding x3]
+        let _entry_size = 21;
+        let aligned_size = 24;
 
         if self.would_exceed(aligned_size) {
             return Err(ArenaError::LimitExceeded);
         }
 
-        // 2. Write
         self.buffer.push(op as u8);
-        self.buffer.extend_from_slice(&(path_len as u32).to_le_bytes());
+        self.buffer.extend_from_slice(&path_id.0.to_le_bytes());
+        self.buffer.extend_from_slice(&left_val.0.to_le_bytes());
+        self.buffer.extend_from_slice(&left_val.1.to_le_bytes());
+        self.buffer.extend_from_slice(&right_val.0.to_le_bytes());
+        self.buffer.extend_from_slice(&right_val.1.to_le_bytes());
         
-        // Write path directly to buffer
-        for (i, &seg_id) in segments.iter().enumerate() {
-            if let Some((kind, bytes)) = interner.resolve(seg_id) {
-                if i > 0 && kind == SegmentKind::Key { self.buffer.push(b'.'); }
-                if kind == SegmentKind::Index { self.buffer.push(b'['); }
-                self.buffer.extend_from_slice(bytes);
-                if kind == SegmentKind::Index { self.buffer.push(b']'); }
-            }
-        }
-
-        self.buffer.extend_from_slice(&(left_bytes.len() as u32).to_le_bytes());
-        self.buffer.extend_from_slice(left_bytes);
-        self.buffer.extend_from_slice(&(right_bytes.len() as u32).to_le_bytes());
-        self.buffer.extend_from_slice(right_bytes);
-
-        let padding = aligned_size - entry_size;
-        for _ in 0..padding { self.buffer.push(0); }
+        // Padded to 24 bytes
+        self.buffer.push(0);
+        self.buffer.push(0);
+        self.buffer.push(0);
 
         self.entry_count += 1;
         Ok(())

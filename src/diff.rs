@@ -1,8 +1,7 @@
 //! Optimized diff using CompactToken.
 
-use crate::parser::{CompactToken, CompactEvent, CompactParser};
-use crate::path::{PathArena, PathId};
-use rustc_hash::FxHashMap;
+use crate::parser::CompactParser;
+use crate::path::PathId;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,25 +18,18 @@ pub fn compute_compact_diff(
     left: &CompactParser,
     right: &CompactParser,
 ) -> Vec<DiffEntry> {
-    let mut left_map = FxHashMap::with_capacity_and_hasher(left.tokens().len(), Default::default());
-    for t in left.tokens() {
-        if t.event == CompactEvent::Value {
-            left_map.insert(t.path_id, t);
-        }
-    }
+    let left_map = left.value_index();
+    let right_map = right.value_index();
+    let left_tokens = left.tokens();
+    let right_tokens = right.tokens();
 
-    let mut right_map = FxHashMap::with_capacity_and_hasher(right.tokens().len(), Default::default());
-    for t in right.tokens() {
-        if t.event == CompactEvent::Value {
-            right_map.insert(t.path_id, t);
-        }
-    }
-
-    let mut diffs = Vec::new();
+    let mut diffs = Vec::with_capacity(32);
 
     // Modified & Removed
-    for (&path_id, l_token) in &left_map {
-        if let Some(r_token) = right_map.get(&path_id) {
+    for (&path_id, &l_idx) in left_map {
+        let l_token = &left_tokens[l_idx];
+        if let Some(&r_idx) = right_map.get(&path_id) {
+            let r_token = &right_tokens[r_idx];
             if l_token.value_hash != r_token.value_hash {
                 diffs.push(DiffEntry {
                     op: DiffOp::Modified,
@@ -57,7 +49,8 @@ pub fn compute_compact_diff(
     }
 
     // Added
-    for (&path_id, r_token) in &right_map {
+    for (&path_id, &r_idx) in right_map {
+        let r_token = &right_tokens[r_idx];
         if !left_map.contains_key(&path_id) {
             diffs.push(DiffEntry {
                 op: DiffOp::Added,
@@ -68,6 +61,6 @@ pub fn compute_compact_diff(
         }
     }
 
-    diffs.sort_by_key(|d| d.path_id);
+    // Sorting removed: O(N log N) -> O(N). API does not promise order.
     diffs
 }

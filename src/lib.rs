@@ -145,6 +145,44 @@ pub extern "C" fn destroy_engine(engine_ptr: *mut Engine) -> Status {
     Status::Ok
 }
 
+/// Reset the engine state for a new diff operation without re-allocating heap.
+#[no_mangle]
+pub extern "C" fn clear_engine(engine_ptr: *mut Engine) -> Status {
+    let engine = match validate_engine(engine_ptr) {
+        Some(e) => e,
+        None => return Status::InvalidHandle,
+    };
+
+    engine.clear();
+    Status::Ok
+}
+
+/// Perform lazy resolution of a SymbolId (PathId) into a string pointer.
+/// 
+/// The returned pointer is valid until the next call to any symbolize* function
+/// or until the engine is cleared/destroyed.
+#[no_mangle]
+pub extern "C" fn resolve_path_symbol(engine_ptr: *mut Engine, path_id: u32) -> *const u8 {
+    let engine = match validate_engine(engine_ptr) {
+        Some(e) => e,
+        None => return std::ptr::null(),
+    };
+
+    let (ptr, _) = engine.resolve_symbol(crate::path::PathId(path_id));
+    ptr
+}
+
+/// Get the length of the string materialized by resolve_path_symbol.
+#[no_mangle]
+pub extern "C" fn get_symbol_len(engine_ptr: *mut Engine) -> u32 {
+    let engine = match validate_engine(engine_ptr) {
+        Some(e) => e,
+        None => return 0,
+    };
+
+    engine.symbol_buffer_len()
+}
+
 /// Get pointer to the last error message.
 #[no_mangle]
 pub extern "C" fn get_last_error(engine_ptr: *const Engine) -> *const u8 {

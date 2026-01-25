@@ -24,11 +24,17 @@ pub struct PathArena {
 }
 
 impl PathArena {
-    pub fn new() -> Self {
-        let mut reverse = Vec::with_capacity(16384);
+    pub fn new(mode: crate::config::ComputeMode) -> Self {
+        let (trie_cap, rev_cap) = match mode {
+            crate::config::ComputeMode::Throughput => (32768, 32768),
+            crate::config::ComputeMode::Edge => (1024, 1024),
+            _ => (16384, 16384), // Latency/Default
+        };
+
+        let mut reverse = Vec::with_capacity(rev_cap);
         reverse.push((ROOT_PATH_ID, SegmentId(0)));
         Self {
-            trie: FxHashMap::with_capacity_and_hasher(16384, Default::default()),
+            trie: FxHashMap::with_capacity_and_hasher(trie_cap, Default::default()),
             reverse,
             interner: PathInterner::new(),
         }
@@ -46,6 +52,12 @@ impl PathArena {
         id
     }
 
+    pub fn clear(&mut self) {
+        self.trie.clear();
+        self.reverse.truncate(1); // Keep root
+        self.interner.clear();
+    }
+
     pub fn path_to_string(&self, id: PathId) -> String {
         if id == ROOT_PATH_ID { return "".to_string(); }
         let mut segments = Vec::with_capacity(16);
@@ -59,14 +71,29 @@ impl PathArena {
         let mut result = String::with_capacity(segments.len() * 12);
         for &seg_id in &segments {
             if let Some((kind, value)) = self.interner.resolve(seg_id) {
+                let s = std::str::from_utf8(value).unwrap_or("");
                 match kind {
-                    SegmentKind::Key => { result.push('.'); result.push_str(value); }
-                    SegmentKind::Index => { result.push('['); result.push_str(value); result.push(']'); }
+                    SegmentKind::Key => { 
+                        if !result.is_empty() { result.push('.'); }
+                        result.push_str(s); 
+                    }
+                    SegmentKind::Index => { result.push('['); result.push_str(s); result.push(']'); }
                 }
             }
         }
-        if result.starts_with('.') { result.remove(0); }
         result
+    }
+
+    pub fn get_path_segments(&self, id: PathId, buffer: &mut Vec<SegmentId>) {
+        buffer.clear();
+        if id == ROOT_PATH_ID { return; }
+        let mut curr = id;
+        while curr != ROOT_PATH_ID {
+            let (parent, seg) = self.reverse[curr.0 as usize];
+            buffer.push(seg);
+            curr = parent;
+        }
+        buffer.reverse();
     }
 
     pub fn interner_mut(&mut self) -> &mut PathInterner { &mut self.interner }
@@ -74,11 +101,8 @@ impl PathArena {
 }
 
 pub struct PathInterner {
-    /// Contour-based string interner (Sea of Bytes) to avoid small String heap churn
     key_data: Vec<u8>,
-    /// Key offsets in key_data: Hash(bytes) -> SegmentId
     keys: FxHashMap<u64, SegmentId>,
-    /// Segment metadata: id -> (SegmentKind, offset, len)
     segments: Vec<(SegmentKind, u32, u32)>,
 }
 
@@ -114,52 +138,38 @@ impl PathInterner {
     }
 
     pub fn intern_index(&mut self, index: usize) -> SegmentId {
-        let s = index.to_string();
-        let bytes = s.as_bytes();
+        let mut buf = [0u8; 20];
+        let mut n = index;
+        let mut pos = 20;
+        if n == 0 {
+            pos -= 1;
+            buf[pos] = b'0';
+        } else {
+            while n > 0 {
+                pos -= 1;
+                buf[pos] = b'0' + (n % 10) as u8;
+                n /= 10;
+            }
+        }
+        let bytes = &buf[pos..];
+        
         let id = SegmentId(self.segments.len() as u32);
         let offset = self.key_data.len() as u32;
+        let len = bytes.len() as u32;
         self.key_data.extend_from_slice(bytes);
-        self.segments.push((SegmentKind::Index, offset, bytes.len() as u32));
+        self.segments.push((SegmentKind::Index, offset, len));
         id
     }
 
-    #[inline]
+    pub fn clear(&mut self) {
+        self.key_data.clear();
+        self.keys.clear();
+        self.segments.clear();
+    }
+
     pub fn resolve(&self, id: SegmentId) -> Option<(SegmentKind, &[u8])> {
         let (kind, off, len) = self.segments.get(id.0 as usize)?;
         let bytes = &self.key_data[*off as usize..(*off + *len) as usize];
         Some((*kind, bytes))
-    }
-
-    /// Resolve all segment IDs for a path in one go to avoid intermediate allocations.
-    pub fn get_path_segments(&self, id: PathId, buffer: &mut Vec<SegmentId>) {
-        buffer.clear();
-        // This is slow if we do it backwards then reverse, but paths are usually shallow (<20)
-        // so it doesn't matter much.
-    }
-}
-
-pub struct ResolvedSegment<'a> {
-    pub kind: SegmentKind,
-    pub bytes: &'a [u8],
-}
-
-
-/// Compatibility for ResultArena
-#[derive(Debug, Clone, Default)]
-pub struct JsonPath { pub segments: Vec<SegmentId> }
-impl JsonPath {
-    pub fn new() -> Self { Self { segments: Vec::new() } }
-    pub fn to_string(&self, interner: &PathInterner) -> String {
-        let mut result = String::new();
-        for &seg_id in &self.segments {
-            if let Some((kind, value)) = interner.resolve(seg_id) {
-                match kind {
-                    SegmentKind::Key => { result.push('.'); result.push_str(value); }
-                    SegmentKind::Index => { result.push('['); result.push_str(value); result.push(']'); }
-                }
-            }
-        }
-        if result.starts_with('.') { result.remove(0); }
-        result
     }
 }
