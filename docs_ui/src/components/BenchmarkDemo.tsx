@@ -45,7 +45,7 @@ export function BenchmarkDemo() {
                 </div>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-8">
+            <div className="flex flex-col gap-8">
                 {METRICS.map((metric, i) => (
                     <div key={i} className="space-y-4">
                         <div className="flex justify-between items-end">
@@ -58,7 +58,7 @@ export function BenchmarkDemo() {
                                 <div key={j} className="space-y-1">
                                     <div className="flex justify-between text-xs font-medium">
                                         <span>{item.name}</span>
-                                        <span className={item.color === "bg-white/10" ? "text-foreground/40" : "text-white"}>
+                                        <span className="text-foreground font-bold font-mono">
                                             {item.value} {item.unit}
                                         </span>
                                     </div>
