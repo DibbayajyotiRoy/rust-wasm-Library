@@ -1,15 +1,15 @@
-# DiffCore: Silicon Path JSON Compute Engine (v2.2)
+# DiffCore: JSON Compute Engine
 
-DiffCore is a world-class WebAssembly compute engine designed for ultra-high-speed structural comparison of large JSON documents. It leverages the **Silicon Path Architecture**—a stateless, zero-allocation pipeline based on rolling 64-bit path hashes and SIMD structural indexing.
+DiffCore is a world-class WebAssembly compute engine designed for ultra-high-speed structural comparison of large JSON documents. It leverages a stateless, zero-allocation pipeline based on rolling 64-bit path hashes and SIMD structural indexing.
 
 ## ✨ Key Features
 
 - **🚀 Extreme Throughput**: Reaches **800 MB/s+** on standard hardware, saturating memory bandwidth.
-- **🧬 Silicon Path**: Zero-allocation hot loop using 64-bit rolling hashes instead of expensive Tries.
+- **🧬 Zero-Allocation Engine**: Zero-allocation hot loop using 64-bit rolling hashes instead of expensive Tries.
 - **⚡ SIMD Accelerated**: Stage 1 structural indexing and Stage 2 parallel value hashing via `v128`.
 - **🌊 Constant Memory**: Deterministic memory footprint via symbolic DMA ingestion.
 
-## 🚀 Performance (Silicon Path Verified)
+## 🚀 Performance (DiffCore Verified)
 
 ![Silicon Path Benchmark](/home/roy/.gemini/antigravity/brain/75de158f-bd2f-4c0d-9f67-9fafacd54a57/uploaded_image_1769534452648.png)
 

@@ -105,7 +105,7 @@ async function main() {
     const wasm = instance.exports;
     const engine = new MasteryEngine(wasm);
 
-    console.log(`\n🚀 DiffCore v2.2 Optimized Benchmark`);
+    console.log(`\n🚀 DiffCore Benchmark`);
     console.log(`Limits: 64MB | Protocol: v2.1 Symbolic\n`);
 
     console.log('| Payload | Throughput | JS (total) | JS (diff) | WASM DMA | Pruning | Speedup |');

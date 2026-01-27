@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 const METRICS = [
     {
-        label: "Latency (10MB)",
+        label: "10MB Parsing Latency",
         description: "Time to complete full diff",
         items: [
             { name: "JavaScript (V8)", value: 155, unit: "ms", color: "bg-white/10" },
@@ -19,7 +19,7 @@ const METRICS = [
         description: "Raw data processing speed",
         items: [
             { name: "JavaScript Base", value: 200, unit: "MB/s", color: "bg-white/10" },
-            { name: "Silicon Path", value: 817, unit: "MB/s", color: "bg-primary" },
+            { name: "DiffCore", value: 817, unit: "MB/s", color: "bg-primary" },
         ],
         better: "higher"
     }
@@ -29,7 +29,7 @@ const GLOSSARY = [
     { term: "Throughput", def: "The volume of data processed per second. Higher throughput means the engine can handle larger files without blocking the UI." },
     { term: "Latency", def: "The delay between input and result. Sub-30ms latency is critical for maintaining 60fps UI updates." },
     { term: "DMA", def: "Direct Memory Access. DiffCore reads native memory directly, bypassing the slow JavaScript heap garbage collector." },
-    { term: "Silicon Path", def: "Our proprietary architecture that computes 64-bit rolling hashes on the fly to avoid tree allocations." }
+    { term: "DiffCore", def: "Our proprietary architecture that computes 64-bit rolling hashes on the fly to avoid tree allocations." }
 ];
 
 export function BenchmarkDemo() {
@@ -41,7 +41,7 @@ export function BenchmarkDemo() {
                 </div>
                 <div>
                     <h3 className="text-xl font-bold text-foreground">Performance Verification</h3>
-                    <p className="text-sm text-foreground/50">Live metrics from v2.2 compilation</p>
+                    <p className="text-sm text-foreground/50">Live metrics from compilation</p>
                 </div>
             </div>
 

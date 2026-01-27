@@ -1,63 +1,88 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ArrowDown, Cpu, Database, FileJson, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ArrowRight } from "lucide-react";
 
 export function ArchitectureDiagram() {
-    const steps = [
-        { icon: FileJson, label: "Raw JSON Stream", sub: "Chunks" },
-        { icon: Database, label: "Zero-Copy Arena", sub: "WASM Memory" },
-        { icon: Cpu, label: "SIMD V128 Parser", sub: "Rust/C++ Core" },
-        { icon: Zap, label: "Diff Engine", sub: "Single-Pass" },
-        { icon: FileJson, label: "Structural Output", sub: "Deterministic" }
-    ];
-
     return (
-        <div className="relative py-12 px-6 rounded-3xl bg-black/40 border border-white/5 overflow-hidden">
-            <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-10" />
+        <div className="relative py-20 select-none cursor-default max-w-5xl mx-auto">
 
-            <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6 max-w-5xl mx-auto">
-                {steps.map((step, i) => (
-                    <div key={i} className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto">
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.8 }}
-                            whileInView={{ opacity: 1, scale: 1 }}
-                            transition={{ delay: i * 0.1 }}
-                            className="relative group"
-                        >
-                            <div className="absolute inset-0 bg-primary/20 blur-xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
-                            <div className="relative w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center backdrop-blur-sm">
-                                <step.icon className="w-6 h-6 text-foreground/80" />
-                            </div>
-                            <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 text-center whitespace-nowrap">
-                                <div className="text-xs font-bold uppercase tracking-widest text-foreground/90">{step.label}</div>
-                                <div className="text-[10px] text-foreground/40 font-mono mt-1">{step.sub}</div>
-                            </div>
-                        </motion.div>
-
-                        {i < steps.length - 1 && (
-                            <motion.div
-                                initial={{ opacity: 0, width: 0 }}
-                                whileInView={{ opacity: 1, width: "100%" }}
-                                transition={{ delay: i * 0.1 + 0.1, duration: 0.5 }}
-                                className="h-8 w-0.5 md:w-12 md:h-0.5 bg-gradient-to-b md:bg-gradient-to-r from-transparent via-primary/50 to-transparent flex items-center justify-center shrink-0"
-                            >
-                                <div className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_10px_currentColor] text-primary" />
-                            </motion.div>
-                        )}
-                    </div>
-                ))}
+            {/* 1. JS / WASM BOUNDARY MARKER */}
+            <div className="absolute top-0 bottom-0 left-[32%] w-px border-l-2 border-dashed border-red-500/30 hidden md:block">
+                <div className="absolute top-0 -left-px -translate-x-1/2 bg-background px-2 text-[10px] font-mono font-bold text-red-500 uppercase tracking-widest whitespace-nowrap">
+                    JS / V8 Boundary
+                </div>
+                <div className="absolute bottom-10 left-4 text-xs font-medium text-red-500/60 w-32 hidden lg:block">
+                    Execution leaves the JavaScript heap here.
+                </div>
             </div>
 
-            {/* Animated signal line */}
-            <div className="absolute top-1/2 left-0 w-full h-px -translate-y-1/2 opacity-20 pointer-events-none">
-                <motion.div
-                    animate={{ x: ["-100%", "100%"] }}
-                    transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-                    className="w-1/3 h-full bg-gradient-to-r from-transparent via-primary to-transparent"
-                />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-8 items-start relative z-10">
+
+                {/* NODE 1: JS HEAP (Fragile / Muted) */}
+                <div className="relative flex flex-col items-center text-center space-y-4 opacity-60 hover:opacity-100 transition-opacity duration-500">
+                    <div className="w-16 h-16 rounded-2xl border-2 border-dashed border-foreground/30 flex items-center justify-center bg-background z-20">
+                        <span className="font-mono text-xs font-bold text-foreground/50">V8</span>
+                    </div>
+                    <div className="space-y-2">
+                        <h3 className="text-sm font-bold uppercase tracking-widest text-foreground/70">JavaScript Heap</h3>
+                        <p className="text-xs text-foreground/50 font-mono leading-relaxed max-w-[200px] mx-auto">
+                            Objects, recursion, garbage collection. <br />
+                            <span className="text-red-500/70">Unbounded latency.</span>
+                        </p>
+                    </div>
+                    {/* Mobile Arrow */}
+                    <ArrowRight className="md:hidden w-5 h-5 text-foreground/20 rotate-90" />
+                </div>
+
+                {/* CONNECTION 1-2 (Desktop) */}
+                <div className="hidden md:block absolute top-8 left-[16%] right-[50%] h-0.5 bg-gradient-to-r from-foreground/10 to-foreground/30 -z-10" />
+
+                {/* NODE 2: WASM LINEAR (Technical / Neutral) */}
+                <div className="relative flex flex-col items-center text-center space-y-4">
+                    <div className="w-16 h-16 rounded-full border-2 border-foreground flex items-center justify-center bg-surface z-20 shadow-sm">
+                        <div className="w-3 h-3 bg-foreground rounded-full" />
+                    </div>
+                    <div className="space-y-2">
+                        <h3 className="text-sm font-bold uppercase tracking-widest text-foreground">WASM Linear Memory</h3>
+                        <p className="text-xs text-foreground/70 font-mono leading-relaxed max-w-[200px] mx-auto">
+                            Single contiguous buffer. Zero-copy writes. <br />
+                            <span className="text-foreground font-bold">No heap growth.</span>
+                        </p>
+                    </div>
+                    <ArrowRight className="md:hidden w-5 h-5 text-foreground/20 rotate-90" />
+                </div>
+
+                {/* CONNECTION 2-3 (Desktop) */}
+                <div className="hidden md:block absolute top-8 left-[50%] right-[16%] h-0.5 bg-gradient-to-r from-foreground/30 to-accent/50 -z-10" />
+
+                {/* NODE 3: NATIVE SIMD (Bold / Accent) */}
+                <div className="relative flex flex-col items-center text-center space-y-4 group">
+                    <motion.div
+                        whileHover={{ scale: 1.1 }}
+                        className="w-20 h-20 rounded-xl bg-accent text-white flex items-center justify-center shadow-xl shadow-accent/20 z-20"
+                    >
+                        <ZapIcon />
+                    </motion.div>
+                    <div className="space-y-2">
+                        <h3 className="text-base font-black uppercase tracking-widest text-accent">Native SIMD Engine</h3>
+                        <p className="text-xs md:text-sm text-foreground font-mono font-bold leading-relaxed max-w-[220px] mx-auto">
+                            Single-pass structural diff.<br />
+                            Deterministic latency.
+                        </p>
+                    </div>
+                </div>
+
             </div>
         </div>
     );
+}
+
+function ZapIcon() {
+    return (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </svg>
+    )
 }
