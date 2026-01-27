@@ -1,13 +1,20 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: oklch(0.1 0.02 240);
-  --color-foreground: oklch(0.95 0.01 240);
-  --color-primary: oklch(0.65 0.2 280);
-  --color-secondary: oklch(0.75 0.15 200);
-  --color-accent: oklch(0.8 0.2 160);
-  
-  --font-sans: "Inter", "Outfit", system-ui, sans-serif;
+  /* Using the requested "Soft Winter" / "Polar Haze" palette */
+  --color-background: #F0EFEA;
+  --color-surface: #FAFDFE;
+  --color-foreground: #1A1A1A;
+
+  --color-primary: #2D2D2D;
+  /* Sharp dark contrast for main actions */
+  --color-secondary: #5E5E5E;
+  /* Softer grey for secondary text */
+  --color-accent: #E54D2E;
+  /* A sharp editorial red/orange for highlights (optional) */
+
+  --font-sans: var(--font-outfit), system-ui, sans-serif;
+  --font-serif: var(--font-fraunces), serif;
   --font-mono: "Fira Code", monospace;
 }
 
@@ -23,20 +30,43 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Typography Overrides */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-serif);
+  font-weight: 750;
+  /* Slightly bolder for display */
+  letter-spacing: -0.03em;
+}
+
+/* Glass effect tuned for light mode */
 .glass {
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.03);
 }
 
 .glow-primary {
-  box-shadow: 0 0 30px oklch(from var(--color-primary) l c h / 0.15);
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.05);
+  /* Subtle shadow instead of neon glow */
 }
 
 pre {
   font-family: var(--font-mono);
+  background: #1e1e1e;
+  /* Keep code blocks dark for contrast */
+  color: #f0f0f0;
+  padding: 1rem;
+  border-radius: 0.5rem;
 }
 
 ::selection {
-  background: oklch(from var(--color-primary) l c h / 0.3);
+  background: rgba(0, 0, 0, 0.1);
+  /* Subtle selection */
+  color: inherit;
 }

@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
-import { Inter, Outfit } from "next/font/google";
+import { Fraunces, Outfit } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const fraunces = Fraunces({ subsets: ["latin"], variable: "--font-fraunces" });
 const outfit = Outfit({ subsets: ["latin"], variable: "--font-outfit" });
 
 export const metadata: Metadata = {
-  title: "DiffCore – High-Performance JSON Diff Engine (Rust + WebAssembly)",
-  description: "DiffCore is a high-performance JSON diff engine built in Rust and WebAssembly, delivering deterministic, zero-GC comparison for large and streaming documents.",
+  title: "DiffCore – High-Performance JSON Diff Engine",
+  description: "DiffCore is a high-performance JSON diff engine built in Rust and WebAssembly.",
 };
 
 export default function RootLayout({
@@ -16,7 +16,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${outfit.variable} dark`}>
+    <html lang="en" className={`${fraunces.variable} ${outfit.variable}`}>
       <body className="antialiased">
         {children}
       </body>
