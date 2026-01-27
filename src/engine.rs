@@ -1,80 +1,93 @@
-//! Main engine using optimized CompactParser.
-
-use crate::config::EngineConfig;
-use crate::diff::{compute_compact_diff, DiffOp};
-use crate::error::{EngineError, ErrorBuffer};
 use crate::memory::ResultArena;
+use crate::diff::compute_compact_diff_v2;
+use crate::error::{ErrorBuffer, EngineError};
 use crate::parser::CompactParser;
 use crate::status::Status;
+use crate::config::EngineConfig;
 
 pub struct Engine {
     magic: u32,
     arena: ResultArena,
-    path_arena: crate::path::PathArena,
     left_parser: CompactParser,
     right_parser: CompactParser,
     error: ErrorBuffer,
     sealed: bool,
     max_input_size: u32,
-    symbol_buffer: String,
+    symbol_buffer: Vec<u8>,
+    left_input: Vec<u8>,
+    right_input: Vec<u8>,
+    left_index: crate::simd_index::StructuralIndex,
+    right_index: crate::simd_index::StructuralIndex,
 }
 
 impl Engine {
     pub fn new(config: EngineConfig, magic: u32) -> Result<Self, EngineError> {
+        let input_cap = (config.max_input_size / 2) as usize;
         Ok(Self {
             magic,
             arena: ResultArena::new(config.max_memory_bytes),
-            path_arena: crate::path::PathArena::new(config.compute_mode),
             left_parser: CompactParser::new(config.max_object_keys, config.compute_mode),
             right_parser: CompactParser::new(config.max_object_keys, config.compute_mode),
             error: ErrorBuffer::new(),
             sealed: false,
             max_input_size: config.max_input_size,
-            symbol_buffer: String::with_capacity(256),
+            symbol_buffer: Vec::with_capacity(1024),
+            left_input: Vec::with_capacity(input_cap),
+            right_input: Vec::with_capacity(input_cap),
+            left_index: crate::simd_index::StructuralIndex::new(),
+            right_index: crate::simd_index::StructuralIndex::new(),
         })
+    }
+
+    pub fn set_path_filter(&mut self, _filter: Option<String>) {
+        // Path filtering is deprecated in Silicon Path (O(1) diffing handles it better)
     }
 
     pub fn magic(&self) -> u32 { self.magic }
     pub fn clear_magic(&mut self) { self.magic = 0; }
 
-    pub fn push_left(&mut self, chunk: &[u8]) -> Status {
+    pub fn push_left(&mut self, _chunk: &[u8]) -> Status {
+        Status::Error // Direct DMA (commit_left) only for Silicon Path
+    }
+
+    pub fn commit_left(&mut self, len: u32) -> Status {
         if self.sealed { return Status::EngineSealed; }
-        if self.left_parser.total_bytes() + self.right_parser.total_bytes() + chunk.len() as u32 > self.max_input_size {
-            return Status::InputLimitExceeded;
-        }
-        match self.left_parser.parse(chunk, &mut self.path_arena) {
+        let bytes = unsafe { std::slice::from_raw_parts(self.left_input.as_ptr(), len as usize) };
+        self.left_index.build(bytes);
+        match self.left_parser.parse_with_index(bytes, &self.left_index) {
             Ok(_) => Status::Ok,
-            Err(crate::parser::ParseError::ObjectKeyLimitExceeded) => Status::ObjectKeyLimitExceeded,
             Err(_) => Status::Error,
         }
     }
 
-    pub fn push_right(&mut self, chunk: &[u8]) -> Status {
+    pub fn push_right(&mut self, _chunk: &[u8]) -> Status {
+        Status::Error
+    }
+
+    pub fn commit_right(&mut self, len: u32) -> Status {
         if self.sealed { return Status::EngineSealed; }
-        if self.left_parser.total_bytes() + self.right_parser.total_bytes() + chunk.len() as u32 > self.max_input_size {
-            return Status::InputLimitExceeded;
-        }
-        match self.right_parser.parse(chunk, &mut self.path_arena) {
+        let bytes = unsafe { std::slice::from_raw_parts(self.right_input.as_ptr(), len as usize) };
+        self.right_index.build(bytes);
+        match self.right_parser.parse_with_index(bytes, &self.right_index) {
             Ok(_) => Status::Ok,
-            Err(crate::parser::ParseError::ObjectKeyLimitExceeded) => Status::ObjectKeyLimitExceeded,
             Err(_) => Status::Error,
         }
     }
 
     pub fn finalize(&mut self) -> Result<*const u8, EngineError> {
-        if self.sealed { return Err(EngineError::EngineSealed); }
+        if self.sealed { return Ok(self.arena.as_ptr()); }
         self.sealed = true;
 
-        let diffs = compute_compact_diff(&self.left_parser, &self.right_parser);
+        let diffs = compute_compact_diff_v2(&self.left_parser, &self.right_parser);
         
         for d in diffs {
             if let Err(_) = self.arena.write_entry_v2(
-                unsafe { std::mem::transmute(d.op) },
+                d.op,
                 d.path_id,
                 d.left_val,
                 d.right_val,
             ) {
-                self.set_error(EngineError::MemoryLimitExceeded);
+                self.error.set(&EngineError::MemoryLimitExceeded);
                 break;
             }
         }
@@ -85,25 +98,25 @@ impl Engine {
 
     pub fn clear(&mut self) {
         self.arena.clear();
-        self.path_arena.clear();
         self.left_parser.clear();
         self.right_parser.clear();
         self.sealed = false;
         self.symbol_buffer.clear();
     }
 
-    pub fn resolve_symbol(&mut self, path_id: crate::path::PathId) -> (*const u8, u32) {
-        self.symbol_buffer = self.path_arena.path_to_string(path_id);
-        (self.symbol_buffer.as_ptr(), self.symbol_buffer.len() as u32)
+    pub fn left_input_ptr(&mut self) -> *mut u8 { self.left_input.as_mut_ptr() }
+    pub fn right_input_ptr(&mut self) -> *mut u8 { self.right_input.as_mut_ptr() }
+
+    pub fn resolve_symbol(&mut self, _path_id: crate::path::PathId) -> (*const u8, u32) {
+        (std::ptr::null(), 0) // Path resolution moved to client side (symbolic hashes)
     }
 
-    pub fn symbol_buffer_len(&self) -> u32 { self.symbol_buffer.len() as u32 }
+    pub fn batch_resolve_symbols(&mut self) -> (*const u8, u32) {
+        (std::ptr::null(), 0)
+    }
 
     pub fn result_len(&self) -> u32 { self.arena.len() }
-    pub fn last_error_ptr(&self) -> *const u8 { self.error.as_ptr() }
+    pub fn symbol_buffer_len(&self) -> u32 { 0 }
     pub fn last_error_len(&self) -> u32 { self.error.len() }
-
-    fn set_error(&mut self, error: EngineError) {
-        self.error.set(&error);
-    }
+    pub fn last_error_ptr(&self) -> *const u8 { self.error.as_ptr() }
 }

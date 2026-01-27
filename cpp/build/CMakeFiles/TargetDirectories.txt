@@ -1,0 +1,3 @@
+/home/roy/private/wasm/cpp/build/CMakeFiles/diffcore.dir
+/home/roy/private/wasm/cpp/build/CMakeFiles/edit_cache.dir
+/home/roy/private/wasm/cpp/build/CMakeFiles/rebuild_cache.dir

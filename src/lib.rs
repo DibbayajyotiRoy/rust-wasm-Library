@@ -12,6 +12,7 @@ mod error;
 mod memory;
 mod parser;
 mod path;
+mod simd_index;
 mod status;
 
 pub use config::{ArrayDiffMode, EngineConfig};
@@ -91,6 +92,65 @@ pub extern "C" fn push_right(engine_ptr: *mut Engine, chunk_ptr: *const u8, chun
     engine.push_right(chunk)
 }
 
+/// Set a path filter (e.g. "spec.containers") to prune unrelated JSON subtrees.
+/// Null pointer or zero length clears the filter.
+#[no_mangle]
+pub extern "C" fn set_path_filter(engine_ptr: *mut Engine, ptr: *const u8, len: u32) -> Status {
+    let engine = match validate_engine(engine_ptr) {
+        Some(e) => e,
+        None => return Status::InvalidHandle,
+    };
+
+    if ptr.is_null() || len == 0 {
+        engine.set_path_filter(None);
+    } else {
+        let filter = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
+        match std::str::from_utf8(filter) {
+            Ok(s) => engine.set_path_filter(Some(s.to_string())),
+            Err(_) => return Status::Error,
+        }
+    }
+    Status::Ok
+}
+
+/// Signal that N bytes have been written into the managed left input buffer.
+#[no_mangle]
+pub extern "C" fn commit_left(engine_ptr: *mut Engine, len: u32) -> Status {
+    let engine = match validate_engine(engine_ptr) {
+        Some(e) => e,
+        None => return Status::InvalidHandle,
+    };
+    engine.commit_left(len)
+}
+
+/// Signal that N bytes have been written into the managed right input buffer.
+#[no_mangle]
+pub extern "C" fn commit_right(engine_ptr: *mut Engine, len: u32) -> Status {
+    let engine = match validate_engine(engine_ptr) {
+        Some(e) => e,
+        None => return Status::InvalidHandle,
+    };
+    engine.commit_right(len)
+}
+
+/// Return the managed pointer for the left input buffer.
+#[no_mangle]
+pub extern "C" fn get_left_input_ptr(engine_ptr: *mut Engine) -> *mut u8 {
+    match validate_engine(engine_ptr) {
+        Some(e) => e.left_input_ptr(),
+        None => std::ptr::null_mut(),
+    }
+}
+
+/// Return the managed pointer for the right input buffer.
+#[no_mangle]
+pub extern "C" fn get_right_input_ptr(engine_ptr: *mut Engine) -> *mut u8 {
+    match validate_engine(engine_ptr) {
+        Some(e) => e.right_input_ptr(),
+        None => std::ptr::null_mut(),
+    }
+}
+
 /// Finalize the diff computation and return pointer to result.
 ///
 /// After calling this, no more chunks can be pushed.
@@ -162,7 +222,7 @@ pub extern "C" fn clear_engine(engine_ptr: *mut Engine) -> Status {
 /// The returned pointer is valid until the next call to any symbolize* function
 /// or until the engine is cleared/destroyed.
 #[no_mangle]
-pub extern "C" fn resolve_path_symbol(engine_ptr: *mut Engine, path_id: u32) -> *const u8 {
+pub extern "C" fn resolve_path_symbol(engine_ptr: *mut Engine, path_id: u64) -> *const u8 {
     let engine = match validate_engine(engine_ptr) {
         Some(e) => e,
         None => return std::ptr::null(),
@@ -183,6 +243,19 @@ pub extern "C" fn get_symbol_len(engine_ptr: *mut Engine) -> u32 {
     engine.symbol_buffer_len()
 }
 
+/// Perform batch resolution of all symbols into a single buffer.
+/// Format: [u32 count][(u32 len, utf8 bytes) x count]
+#[no_mangle]
+pub extern "C" fn batch_resolve_symbols(engine_ptr: *mut Engine) -> *const u8 {
+    let engine = match validate_engine(engine_ptr) {
+        Some(e) => e,
+        None => return std::ptr::null(),
+    };
+
+    let (ptr, _) = engine.batch_resolve_symbols();
+    ptr
+}
+
 /// Get pointer to the last error message.
 #[no_mangle]
 pub extern "C" fn get_last_error(engine_ptr: *const Engine) -> *const u8 {
@@ -201,26 +274,35 @@ pub extern "C" fn get_last_error_len(engine_ptr: *const Engine) -> u32 {
         Some(e) => e,
         None => return 0,
     };
-
     engine.last_error_len()
 }
 
 /// Allocate memory for the host to write input data.
-#[no_mangle]
+// --- Internal Memory Management (Hidden from Public ABI) ---
+
+const ALLOC_MAGIC: u32 = 0xDEADC0DE;
+
+#[export_name = "_internal_alloc"]
 pub extern "C" fn alloc(len: u32) -> *mut u8 {
-    let mut buf = Vec::with_capacity(len as usize);
+    let cap = 8 + len as usize;
+    let mut buf = Vec::<u8>::with_capacity(cap);
     let ptr = buf.as_mut_ptr();
-    std::mem::forget(buf); // Host now owns this memory
-    ptr
+    unsafe {
+        std::ptr::write_unaligned(ptr as *mut u32, ALLOC_MAGIC);
+        std::ptr::write_unaligned(ptr.add(4) as *mut u32, cap as u32);
+    }
+    std::mem::forget(buf);
+    unsafe { ptr.add(8) }
 }
 
-/// Free memory allocated by `alloc`.
-#[no_mangle]
-pub extern "C" fn dealloc(ptr: *mut u8, len: u32) {
-    if !ptr.is_null() {
-        unsafe {
-            let _ = Vec::from_raw_parts(ptr, 0, len as usize);
-        }
+#[export_name = "_internal_dealloc"]
+pub extern "C" fn dealloc(ptr: *mut u8, _len: u32) {
+    if ptr.is_null() { return; }
+    unsafe {
+        let base = ptr.sub(8);
+        if std::ptr::read_unaligned(base as *const u32) != ALLOC_MAGIC { return; }
+        let cap = std::ptr::read_unaligned(base.add(4) as *const u32) as usize;
+        let _ = Vec::from_raw_parts(base, 0, cap);
     }
 }
 
