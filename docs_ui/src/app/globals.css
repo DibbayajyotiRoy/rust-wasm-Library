@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: oklch(0.1 0.02 240);
+  --color-foreground: oklch(0.95 0.01 240);
+  --color-primary: oklch(0.65 0.2 280);
+  --color-secondary: oklch(0.75 0.15 200);
+  --color-accent: oklch(0.8 0.2 160);
+  
+  --font-sans: "Inter", "Outfit", system-ui, sans-serif;
+  --font-mono: "Fira Code", monospace;
+}
+
+:root {
+  --background: var(--color-background);
+  --foreground: var(--color-foreground);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glow-primary {
+  box-shadow: 0 0 30px oklch(from var(--color-primary) l c h / 0.15);
+}
+
+pre {
+  font-family: var(--font-mono);
+}
+
+::selection {
+  background: oklch(from var(--color-primary) l c h / 0.3);
+}

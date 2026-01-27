@@ -1,45 +1,44 @@
-# DiffCore: Industrial Symbolic JSON Compute Engine (v0.1)
+# DiffCore: Silicon Path JSON Compute Engine (v2.2)
 
-DiffCore is a world-class WebAssembly compute engine designed for zero-GC structural comparison of complex JSON documents. It leverages a **Symbolic DMA Architecture** to achieve peak hardware throughput via direct linear memory access and deferred path materialization.
+DiffCore is a world-class WebAssembly compute engine designed for ultra-high-speed structural comparison of large JSON documents. It leverages the **Silicon Path Architecture**—a stateless, zero-allocation pipeline based on rolling 64-bit path hashes and SIMD structural indexing.
 
 ## ✨ Key Features
 
-- **🚀 Industrial Throughput**: Optimized for **DMA Access**, reaching speeds of 300MB/s+.
-- **🌊 Bounded Ingestion**: Deterministic memory working set via chunked ingestion.
-- **🧬 Zero-Allocation Hot loop**: Total reuse of internal buffers and Tries via `clear_engine()`.
-- **🔍 Path Pruning**: Skip irrelevant JSON subtrees using the O(Depth) segment filter.
+- **🚀 Extreme Throughput**: Reaches **800 MB/s+** on standard hardware, saturating memory bandwidth.
+- **🧬 Silicon Path**: Zero-allocation hot loop using 64-bit rolling hashes instead of expensive Tries.
+- **⚡ SIMD Accelerated**: Stage 1 structural indexing and Stage 2 parallel value hashing via `v128`.
+- **🌊 Constant Memory**: Deterministic memory footprint via symbolic DMA ingestion.
 
-## 🚀 Performance (v0.1 Verified)
+## 🚀 Performance (Silicon Path Verified)
 
-| Payload | JS Avg | WASM DMA | WASM + Pruning | Speedup |
-|---------|--------|----------|----------------|---------|
-| 1.0 MB  | 14 ms  | 6.8 ms   | 2.9 ms         | **4.8x** |
-| 9.8 MB  | 153 ms | 103 ms   | 36 ms          | **4.2x** |
+![Silicon Path Benchmark](/home/roy/.gemini/antigravity/brain/75de158f-bd2f-4c0d-9f67-9fafacd54a57/uploaded_image_1769534452648.png)
 
-*Note: JS Baseline uses an optimized iterative crawler. WASM + Pruning bypasses character scanning for targeted observability.*
+| Payload | Throughput | Speedup (vs JS Total) |
+|---------|------------|------------------------|
+| 1.0 MB | **817 MB/s** | **5.0x** |
+| 9.8 MB | **676 MB/s** | **5.4x** |
+
+*Note: JS Baseline uses V8's highly optimized `JSON.parse` + iterative diff. WASM parses raw bytes and diffs in a single unified pass.*
 
 ## 📦 Rapid Integration
 
-```javascript
-import { DiffEngine } from './diffcore.js';
-
-const engine = new DiffEngine(wasm, { computeMode: 'Throughput' });
-
-// Direct Write (Zero-Copy DMA)
-const lp = engine.getLeftInputPtr();
-memory.set(largeBuffer, lp);
-engine.commitLeft(largeBuffer.length);
-
-const result = engine.finalize();
+```bash
+# Add as direct GitHub dependency
+bun add https://github.com/DibbayajyotiRoy/rust-wasm-Library
 ```
 
-See [Implementation Guide (implementation.md)](./implementation.md) for full detailed patterns.
+```javascript
+import { DiffEngine } from './pkg/diffcore.js';
+
+// Initialize Silicon Path Engine
+const engine = new DiffEngine(wasm, { computeMode: 'Throughput' });
+```
 
 ## ⚙️ Engineering Principles
 
-1.  **Symbolic-First**: Defer path string materialization until the display layer.
-2.  **Bandwidth Bound**: Optimized to saturate linear memory throughput.
-3.  **Linear Stability**: Decoupled state machines ensure 10MB+ stability.
+1.  **Stateless Dispatch**: Path identity is computed on-the-fly, eliminating Trie lookups.
+2.  **Bandwidth Bound**: Optimized to saturate linear memory throughput via SIMD.
+3.  **Symbolic-First**: Defer path string materialization until the display layer.
 
 ## 📄 License
 
