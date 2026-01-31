@@ -5,6 +5,7 @@ node_modules/
 /target
 /dist
 /pkg/*.wasm
+cpp/build/
 
 # IDE
 .idea/
