@@ -1,6 +1,6 @@
 {
   "name": "diffcore",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "High-performance streaming JSON diff engine powered by WebAssembly",
   "type": "module",
   "main": "./dist/index.js",
