@@ -66,12 +66,14 @@ const result = engine.finalize();
 
 ## Performance
 
-| Payload | Throughput | vs Optimized JS |
-|---------|------------|-----------------|
-| 1.0 MB  | **817 MB/s** | 5.0x faster |
-| 9.8 MB  | **676 MB/s** | 5.4x faster |
+| Payload | Throughput | JS (total) | DiffCore | Speedup |
+|---------|------------|------------|----------|---------|
+| 100KB   | 750 MB/s   | 1.1ms      | 0.3ms    | **4.1x** |
+| 1MB     | 635 MB/s   | 11.9ms     | 3.1ms    | **3.9x** |
+| 5MB     | 602 MB/s   | 60.6ms     | 16.2ms   | **3.7x** |
+| 10MB    | 464 MB/s   | 126.5ms    | 42.1ms   | **3.0x** |
 
-*Benchmark: V8's `JSON.parse` + iterative diff vs DiffCore single-pass raw byte processing.*
+*JS (total) = `JSON.parse` + diff. DiffCore parses and diffs in a single streaming pass.*
 
 ## API Reference
 
