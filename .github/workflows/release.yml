@@ -1,4 +1,4 @@
-name: Release
+name: Release to NPM
 
 on:
   push:
@@ -21,22 +21,21 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Install wasm-pack
-        run: cargo install wasm-pack
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           registry-url: 'https://registry.npmjs.org'
-
-      - name: Build WASM
-        run: wasm-pack build --target web --release
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build JS
+      - name: Build WASM
+        run: |
+          cargo build --release
+          cp target/wasm32-unknown-unknown/release/diffcore.wasm pkg/
+
+      - name: Build TypeScript
         run: npm run build:js
 
       - name: Bundle WASM
@@ -45,7 +44,7 @@ jobs:
       - name: Verify package
         run: npm pack --dry-run
 
-      - name: Publish to NPM with provenance
+      - name: Publish to NPM
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
