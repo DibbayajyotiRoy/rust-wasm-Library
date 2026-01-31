@@ -244,17 +244,16 @@ npm run build:js      # Compile TypeScript
 npm run build:bundle  # Embed WASM as Base64
 ```
 
-## Browser Compatibility
+## Platform Support
 
-| Platform | Minimum Version |
-|----------|-----------------|
-| Chrome | 89+ |
-| Firefox | 89+ |
-| Safari | 15+ |
-| Node.js | 18+ |
-| Cloudflare Workers | ✓ |
-| Vercel Edge | ✓ |
-| Deno | ✓ |
+| Platform | Support | Notes |
+|----------|---------|-------|
+| **Node.js** | ✅ Full | v18+ supported |
+| **Browsers** | ✅ Full | Chrome 89+, Firefox 89+, Safari 15+ |
+| **Electron** | ✅ Full | Main & Renderer processes |
+| **Tauri** | ✅ Full | Frontend (WebView) |
+| **Edge** | ✅ Full | Cloudflare Workers, Vercel Edge, Deno |
+| **React Native**| ⚠️ Partial | Requires WASM polyfill or WebView |
 
 ## License
 

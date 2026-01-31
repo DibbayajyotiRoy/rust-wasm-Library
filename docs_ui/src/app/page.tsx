@@ -55,36 +55,36 @@ const DOCS_CONTENT = {
   ],
   mobile: [
     {
-      title: "Configure Git Submodule",
-      description: "Add DiffCore as a git submodule to ensure native compilation for ARM targets.",
-      code: "git submodule add https://github.com/DibbayajyotiRoy/rust-wasm-Library\ncd rust-wasm-Library && cargo build --release --target aarch64-linux-android"
+      title: "Install via NPM",
+      description: "Compatible with modern hybrid runtimes (Ionic, Capacitor, Expo).",
+      code: "npm install diffcore"
     },
     {
-      title: "Map Symbolic Headers",
-      description: "Include the C++ headers to expose the raw DiffCore parser.",
-      code: "#include \"rust-wasm-Library/cpp/include/parser.h\"\n#include \"rust-wasm-Library/cpp/include/engine.h\""
+      title: "React Native Setup",
+      description: "Requires WebAssembly polyfills in older runtimes. Works native in WebView.",
+      code: "// Ensure global.WebAssembly exists\nimport 'react-native-wasm';\nimport { diff } from 'diffcore';"
     },
     {
-      title: "Bind Native Buffers",
-      description: "Map native memory buffers for direct ingestion.",
-      code: "auto engine = new silicon::Engine(config);\nengine->commit_left(nativeBuffer, length);\nauto result = engine->finalize();"
+      title: "Off-Main-Thread",
+      description: "Use DiffCoreWorker to keep animations 60fps smooth.",
+      code: "const worker = new DiffCoreWorker();\nawait worker.diff(largePayload);"
     }
   ],
   desktop: [
     {
-      title: "Link Cargo Dependency",
-      description: "Add the engine as a direct Git dependency in `Cargo.toml`.",
-      code: "[dependencies]\ndiffcore = { git = \"https://github.com/DibbayajyotiRoy/rust-wasm-Library\" }"
+      title: "Install via NPM",
+      description: "First-class support for Electron, Tauri, and NW.js.",
+      code: "npm install diffcore"
     },
     {
-      title: "Setup Shared Bus Memory",
-      description: "Establish a shared memory bus between the Node.js process and Rust core.",
-      code: "use diffcore::Engine;\n\nlet mut engine = Engine::new(config);\nengine.push_left(raw_bytes);"
+      title: "Electron Integration",
+      description: "Works in both Main and Renderer processes. No native build issues.",
+      code: "// In main.ts or renderer.ts\nimport { diff } from 'diffcore';\nconst patches = await diff(stateA, stateB);"
     },
     {
-      title: "Run Real-time Monitoring",
-      description: "Deploy for low-latency state monitoring.",
-      code: "engine.watch(path).on('change', (diff) => {\n   app.dispatch({ type: 'UPDATE_STATE', diff });\n});"
+      title: "Local File Streaming",
+      description: "Process gigabytes of local data with low memory footprint.",
+      code: "const stream = fs.createReadStream('large.json');\nfor await (const chunk of stream) {\n  engine.pushLeft(chunk);\n}"
     }
   ]
 };
@@ -107,24 +107,45 @@ export default function Home() {
             <span className="hidden sm:inline">RUST/C++ CORE</span>
             <span className="hidden sm:inline">NO TELEMETRY</span>
           </div>
-          <motion.a
-            href="https://github.com/DibbayajyotiRoy/rust-wasm-Library"
-            target="_blank"
-            className="flex items-center gap-2 text-foreground font-bold hover:text-accent transition-colors"
-            whileHover="hover"
-            initial="initial"
-          >
-            <motion.div
-              variants={{
-                initial: { rotate: 0 },
-                hover: { rotate: 360, scale: 1.1 }
-              }}
-              transition={{ duration: 0.5, ease: "backOut" }}
+          <div className="flex items-center gap-6">
+            <motion.a
+              href="https://www.npmjs.com/package/diffcore"
+              target="_blank"
+              className="flex items-center gap-2 text-foreground font-bold hover:text-accent transition-colors"
+              whileHover="hover"
+              initial="initial"
             >
-              <Github className="w-5 h-5" />
-            </motion.div>
-            <span className="hidden sm:inline tracking-widest pl-1">STAR ON GITHUB</span>
-          </motion.a>
+              <motion.div
+                variants={{
+                  initial: { scale: 1 },
+                  hover: { scale: 1.1, rotate: 15 }
+                }}
+                transition={{ duration: 0.3 }}
+              >
+                <Box className="w-5 h-5" />
+              </motion.div>
+              <span className="hidden sm:inline tracking-widest pl-1">NPM</span>
+            </motion.a>
+
+            <motion.a
+              href="https://github.com/DibbayajyotiRoy/rust-wasm-Library"
+              target="_blank"
+              className="flex items-center gap-2 text-foreground font-bold hover:text-accent transition-colors"
+              whileHover="hover"
+              initial="initial"
+            >
+              <motion.div
+                variants={{
+                  initial: { rotate: 0 },
+                  hover: { rotate: 360, scale: 1.1 }
+                }}
+                transition={{ duration: 0.5, ease: "backOut" }}
+              >
+                <Github className="w-5 h-5" />
+              </motion.div>
+              <span className="hidden sm:inline tracking-widest pl-1">STAR ON GITHUB</span>
+            </motion.a>
+          </div>
         </div>
       </div>
 
