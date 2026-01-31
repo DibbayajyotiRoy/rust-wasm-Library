@@ -76,6 +76,10 @@ impl CompactParser {
         let mut i = 0;
         let positions = &index.positions;
         let len = positions.len();
+        let json_len = json.len();
+        
+        // Track if we just saw a colon (expecting a value)
+        let mut after_colon = false;
         
         while i < len {
             let pos = positions[i] as usize;
@@ -83,6 +87,7 @@ impl CompactParser {
             
             match b {
                 b'{' => {
+                    after_colon = false;
                     self.path_stack.push(self.current_path_id);
                     self.push_token(self.current_path_id, CompactEvent::StartObject, 0, 0, 0);
                     self.expecting_key = true;
@@ -90,25 +95,73 @@ impl CompactParser {
                     i += 1;
                 }
                 b'}' => {
+                    after_colon = false;
                     self.expecting_key = false;
                     self.current_path_id = self.path_stack.pop().unwrap_or(ROOT_PATH_ID);
                     self.push_token(self.current_path_id, CompactEvent::EndObject, 0, 0, 0);
                     i += 1;
                 }
                 b'[' => {
+                    after_colon = false;
                     self.path_stack.push(self.current_path_id);
                     self.push_token(self.current_path_id, CompactEvent::StartArray, 0, 0, 0);
                     self.array_indices.push(0);
                     self.current_path_id = fold_index_hash(self.current_path_id, 0);
                     i += 1;
+                    
+                    // Check for primitive value as first array element
+                    if i < len {
+                        let next_struct_pos = positions[i] as usize;
+                        let value_start = skip_whitespace(json, pos + 1, next_struct_pos);
+                        if value_start < next_struct_pos {
+                            let first_char = unsafe { *json.get_unchecked(value_start) };
+                            if !matches!(first_char, b'"' | b'{' | b'[' | b']') {
+                                let value_end = find_primitive_end(json, value_start, next_struct_pos);
+                                if value_end > value_start {
+                                    let val_bytes = unsafe { json.get_unchecked(value_start..value_end) };
+                                    self.push_token(
+                                        self.current_path_id,
+                                        CompactEvent::Value,
+                                        hash_bytes_simd(val_bytes),
+                                        value_start as u32,
+                                        (value_end - value_start) as u32
+                                    );
+                                }
+                            }
+                        }
+                    }
                 }
                 b']' => {
+                    // Check for last primitive value before closing bracket
+                    if i > 0 && !self.array_indices.is_empty() {
+                        let prev_pos = positions[i - 1] as usize + 1;
+                        let value_start = skip_whitespace(json, prev_pos, pos);
+                        if value_start < pos {
+                            let first_char = unsafe { *json.get_unchecked(value_start) };
+                            if !matches!(first_char, b'"' | b'{' | b'[' | b'}' | b']' | b',') {
+                                let value_end = find_primitive_end(json, value_start, pos);
+                                if value_end > value_start {
+                                    let val_bytes = unsafe { json.get_unchecked(value_start..value_end) };
+                                    self.push_token(
+                                        self.current_path_id,
+                                        CompactEvent::Value,
+                                        hash_bytes_simd(val_bytes),
+                                        value_start as u32,
+                                        (value_end - value_start) as u32
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    
+                    after_colon = false;
                     self.array_indices.pop();
                     self.current_path_id = self.path_stack.pop().unwrap_or(ROOT_PATH_ID);
                     self.push_token(self.current_path_id, CompactEvent::EndArray, 0, 0, 0);
                     i += 1;
                 }
                 b'"' => {
+                    after_colon = false;
                     let start = pos + 1;
                     i += 1;
                     
@@ -138,16 +191,73 @@ impl CompactParser {
                 }
                 b':' => {
                     self.expecting_key = false;
+                    after_colon = true;
                     i += 1;
+                    
+                    // Check if next structural char indicates a primitive value
+                    // Look ahead to see what follows the colon
+                    if i < len {
+                        let next_struct_pos = positions[i] as usize;
+                        // Scan from pos+1 to next_struct_pos for primitive value
+                        let value_start = skip_whitespace(json, pos + 1, next_struct_pos);
+                        if value_start < next_struct_pos {
+                            let first_char = unsafe { *json.get_unchecked(value_start) };
+                            // If it's not a quote or structural char, it's a primitive
+                            if !matches!(first_char, b'"' | b'{' | b'[') {
+                                // Find end of primitive (up to next structural char)
+                                let value_end = find_primitive_end(json, value_start, next_struct_pos);
+                                if value_end > value_start {
+                                    let val_bytes = unsafe { json.get_unchecked(value_start..value_end) };
+                                    self.push_token(
+                                        self.current_path_id,
+                                        CompactEvent::Value,
+                                        hash_bytes_simd(val_bytes),
+                                        value_start as u32,
+                                        (value_end - value_start) as u32
+                                    );
+                                }
+                            }
+                        }
+                    }
                 }
                 b',' => {
-                    if let Some(idx) = self.array_indices.last_mut() {
-                        *idx += 1;
+                    // Check if we're in array context
+                    let in_array = !self.array_indices.is_empty();
+                    
+                    if in_array {
+                        // Check if there's a primitive value before this comma (array element)
+                        if i > 0 && !after_colon {
+                            let prev_pos = positions[i - 1] as usize + 1;
+                            let value_start = skip_whitespace(json, prev_pos, pos);
+                            if value_start < pos {
+                                let first_char = unsafe { *json.get_unchecked(value_start) };
+                                if !matches!(first_char, b'"' | b'{' | b'[' | b'}' | b']') {
+                                    let value_end = find_primitive_end(json, value_start, pos);
+                                    if value_end > value_start {
+                                        let val_bytes = unsafe { json.get_unchecked(value_start..value_end) };
+                                        self.push_token(
+                                            self.current_path_id,
+                                            CompactEvent::Value,
+                                            hash_bytes_simd(val_bytes),
+                                            value_start as u32,
+                                            (value_end - value_start) as u32
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Increment array index
+                        if let Some(idx) = self.array_indices.last_mut() {
+                            *idx += 1;
+                        }
                         let parent = *self.path_stack.last().unwrap_or(&ROOT_PATH_ID);
-                        self.current_path_id = fold_index_hash(parent, *idx);
+                        let new_idx = *self.array_indices.last().unwrap_or(&0);
+                        self.current_path_id = fold_index_hash(parent, new_idx);
                     } else {
                         self.expecting_key = true;
                     }
+                    after_colon = false;
                     i += 1;
                 }
                 _ => { i += 1; }
@@ -175,6 +285,35 @@ impl CompactParser {
 
     pub fn total_bytes(&self) -> u32 { self.total_bytes }
     pub fn tokens(&self) -> &[CompactToken] { &self.tokens }
+}
+
+/// Skip whitespace characters (standalone function)
+#[inline(always)]
+fn skip_whitespace(json: &[u8], start: usize, end: usize) -> usize {
+    let mut pos = start;
+    while pos < end {
+        let b = unsafe { *json.get_unchecked(pos) };
+        if !matches!(b, b' ' | b'\t' | b'\n' | b'\r') {
+            break;
+        }
+        pos += 1;
+    }
+    pos
+}
+
+/// Find end of primitive value (number, true, false, null) - standalone function
+#[inline(always)]
+fn find_primitive_end(json: &[u8], start: usize, max_end: usize) -> usize {
+    let mut pos = start;
+    while pos < max_end {
+        let b = unsafe { *json.get_unchecked(pos) };
+        // Primitive ends at whitespace or structural char
+        if matches!(b, b' ' | b'\t' | b'\n' | b'\r' | b',' | b'}' | b']') {
+            break;
+        }
+        pos += 1;
+    }
+    pos
 }
 
 /// SIMD-accelerated value hash for world-class throughput.

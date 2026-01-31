@@ -1,0 +1,35 @@
+# Source files
+src/
+js/
+cpp/
+bench/
+docs_ui/
+test/
+scripts/
+
+# Build artifacts not needed in package
+pkg/
+target/
+
+# Config files
+.cargo/
+Cargo.toml
+Cargo.lock
+CMakeLists.txt
+tsconfig.json
+.gitignore
+
+# Documentation files (except README)
+API.md
+DIFFCORE_FEATURES.md
+implementation.md
+*.md
+!README.md
+
+# Git
+.git/
+.github/
+
+# IDE
+.vscode/
+.idea/

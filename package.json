@@ -1,0 +1,52 @@
+{
+  "name": "diffcore",
+  "version": "1.0.0",
+  "description": "High-performance streaming JSON diff engine powered by WebAssembly",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./worker": {
+      "import": "./dist/worker.js",
+      "types": "./dist/worker.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build:wasm": "cargo build --release && cp target/wasm32-unknown-unknown/release/diffcore.wasm pkg/",
+    "build:js": "tsc",
+    "build:bundle": "node scripts/embed-wasm.mjs",
+    "build": "npm run build:wasm && npm run build:js && npm run build:bundle",
+    "prepublishOnly": "npm run build",
+    "test": "node --test test/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DibbayajyotiRoy/rust-wasm-Library.git"
+  },
+  "keywords": [
+    "json",
+    "diff",
+    "wasm",
+    "webassembly",
+    "streaming",
+    "performance"
+  ],
+  "author": "DibbayajyotiRoy",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

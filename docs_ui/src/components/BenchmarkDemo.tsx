@@ -9,8 +9,8 @@ const METRICS = [
         label: "10MB Parsing Latency",
         description: "Time to complete full diff",
         items: [
-            { name: "JavaScript (V8)", value: 155, unit: "ms", color: "bg-white/10" },
-            { name: "DiffCore (WASM)", value: 29, unit: "ms", color: "bg-accent" },
+            { name: "JavaScript (V8)", value: 127, unit: "ms", color: "bg-white/10" },
+            { name: "DiffCore (WASM)", value: 42, unit: "ms", color: "bg-accent" },
         ],
         better: "lower"
     },
@@ -19,17 +19,17 @@ const METRICS = [
         description: "Raw data processing speed",
         items: [
             { name: "JavaScript Base", value: 200, unit: "MB/s", color: "bg-white/10" },
-            { name: "DiffCore", value: 817, unit: "MB/s", color: "bg-primary" },
+            { name: "DiffCore", value: 750, unit: "MB/s", color: "bg-primary" },
         ],
         better: "higher"
     }
 ];
 
 const GLOSSARY = [
-    { term: "Throughput", def: "The volume of data processed per second. Higher throughput means the engine can handle larger files without blocking the UI." },
-    { term: "Latency", def: "The delay between input and result. Sub-30ms latency is critical for maintaining 60fps UI updates." },
-    { term: "DMA", def: "Direct Memory Access. DiffCore reads native memory directly, bypassing the slow JavaScript heap garbage collector." },
-    { term: "DiffCore", def: "Our proprietary architecture that computes 64-bit rolling hashes on the fly to avoid tree allocations." }
+    { term: "NPM Package", def: "Pre-compiled WASM bundled as Base64. Zero toolchain required - just npm install." },
+    { term: "Auto Cleanup", def: "FinalizationRegistry automatically frees WASM memory when engines are garbage collected." },
+    { term: "DMA Mode", def: "Direct Memory Access. DiffCore reads native memory directly, bypassing the slow JavaScript heap." },
+    { term: "Streaming", def: "Parse and diff in a single pass. Processes chunks without building full object tree." }
 ];
 
 export function BenchmarkDemo() {

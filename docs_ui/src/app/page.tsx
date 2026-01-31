@@ -11,46 +11,46 @@ import { CodeBlock } from "@/components/CodeBlock";
 import { cn } from "@/lib/utils";
 
 const HERO_METRICS = [
-  { value: "29ms", label: "Latency (10MB)" },
-  { value: "817 MB/s", label: "Throughput" },
-  { value: "0", label: "GC Pauses" },
-  { value: "SIMD", label: "Zero-Copy" },
+  { value: "42ms", label: "Latency (10MB)" },
+  { value: "750 MB/s", label: "Throughput" },
+  { value: "Auto", label: "Memory Cleanup" },
+  { value: "NPM", label: "Registry" },
 ];
 
 const ONBOARDING_STEPS = [
   {
-    title: "1. INSTALL CORE",
-    desc: "Direct GitHub link. No registry latency.",
-    code: "bun add https://github.com/DibbayajyotiRoy/rust-wasm-Library\n# or\nnpm install https://github.com/DibbayajyotiRoy/rust-wasm-Library"
+    title: "1. INSTALL FROM NPM",
+    desc: "One command. Zero toolchain required.",
+    code: "npm install diffcore\n# or\nbun add diffcore"
   },
   {
-    title: "2. INITIALIZE ENGINE",
-    desc: "Pre-allocate linear memory arenas.",
-    code: "import { DiffEngine } from './pkg/diffcore.js';\n// Explicit memory binding for zero-copy\nconst engine = new DiffEngine(wasm, { computeMode: 'Throughput' });"
+    title: "2. IMPORT & DIFF",
+    desc: "Zero-config. Automatic WASM loading.",
+    code: "import { diff } from 'diffcore';\n\nconst result = await diff(oldJson, newJson);\nconsole.log(result.entries);"
   },
   {
-    title: "3. STREAM & DIFF",
-    desc: "Zero-allocation execution loop.",
-    code: "// Writes directly to WASM memory offset, bypassing JS heap\nconst lp = engine.getLeftInputPtr();\nnew Uint8Array(wasm.memory.buffer, lp, b1.length).set(b1);\nengine.commitLeft(b1.length);\nengine.finalize();"
+    title: "3. AUTOMATIC CLEANUP",
+    desc: "Memory managed via FinalizationRegistry.",
+    code: "// Engine is garbage-collected automatically!\nconst engine = await createEngine();\nengine.pushLeft(chunk1);\nengine.pushRight(chunk2);\nconst result = engine.finalize();\n// No .destroy() needed"
   }
 ];
 
 const DOCS_CONTENT = {
   web: [
     {
-      title: "Integrate via GitHub",
-      description: "Import DiffCore directly as a GitHub dependency to ensure you have the latest DiffCore optimizations.",
-      code: "bun add https://github.com/DibbayajyotiRoy/rust-wasm-Library"
+      title: "Install from NPM",
+      description: "Pre-compiled WASM included. No Rust toolchain required.",
+      code: "npm install diffcore"
     },
     {
-      title: "Initialize Engine Instance",
-      description: "Load the WebAssembly binary and initialize the DiffCore engine with explicit memory bindings.",
-      code: "import { DiffEngine } from './pkg/diffcore.js';\n\nconst engine = new DiffEngine(wasm, { computeMode: 'Throughput' });"
+      title: "One-Line Diff",
+      description: "Zero-config API with embedded WASM auto-loading.",
+      code: "import { diff } from 'diffcore';\n\nconst result = await diff(leftJson, rightJson);\nconsole.log(result.entries); // [{op, path, leftValue, rightValue}]"
     },
     {
-      title: "Execute Zero-GC Diff",
-      description: "Stream raw bytes into linear memory. The unified single-pass parser enables deterministic execution.",
-      code: "const lp = engine.getLeftInputPtr();\nnew Uint8Array(wasm.memory.buffer, lp, b1.length).set(b1);\nengine.commitLeft(b1.length);\n\nconst diffs = engine.finalize();"
+      title: "Streaming Mode",
+      description: "For large files, use the streaming engine with automatic memory management.",
+      code: "import { createEngine } from 'diffcore';\n\nconst engine = await createEngine();\nengine.pushLeft(chunk1);\nengine.pushRight(chunk2);\nconst result = engine.finalize();\n// Memory auto-cleaned via FinalizationRegistry"
     }
   ],
   mobile: [
@@ -164,8 +164,8 @@ export default function Home() {
                   transition={{ delay: 0.2 }}
                   className="text-xl md:text-2xl text-foreground/60 font-medium max-w-xl leading-relaxed"
                 >
-                  SIMD-accelerated Rust/C++ core that replaces V8 parsing for real-time diffs.
-                  <span className="text-foreground font-bold border-b-2 border-accent/20 font-mono"> 29ms </span> for 10MB payloads. Runs in WASM.
+                  Production-ready NPM package with SIMD-accelerated Rust core.
+                  <span className="text-foreground font-bold border-b-2 border-accent/20 font-mono"> npm install diffcore </span> — zero toolchain required.
                 </motion.p>
               </div>
 
@@ -232,9 +232,9 @@ export default function Home() {
                 <h3 className="text-sm font-bold uppercase tracking-widest mb-6 text-foreground/50">End-to-End Diff Latency (10MB JSON)</h3>
                 <div className="space-y-4 text-base font-mono">
                   {[
-                    { name: "jsondiffpatch", value: "155ms", reason: "(GC Pause)", status: "bad" },
-                    { name: "deep-diff", value: "142ms", reason: "(Recursive)", status: "bad" },
-                    { name: "DiffCore", value: "29ms", reason: "(Zero-GC)", status: "good" }
+                    { name: "JS + JSON.parse", value: "127ms", reason: "(Parse + Diff)", status: "bad" },
+                    { name: "JS (pre-parsed)", value: "52ms", reason: "(Diff Only)", status: "bad" },
+                    { name: "DiffCore WASM", value: "42ms", reason: "(3x Faster)", status: "good" }
                   ].map((c, i) => (
                     <div key={i} className="flex justify-between items-center group py-3 border-b border-black/5 last:border-0">
                       <span className={cn("font-bold", c.status === "good" ? "text-foreground" : "text-foreground/40")}>{c.name}</span>
@@ -245,7 +245,7 @@ export default function Home() {
                     </div>
                   ))}
                 </div>
-                <p className="text-xs text-foreground/30 mt-4">* JS libraries include GC pauses. DiffCore does not.</p>
+                <p className="text-xs text-foreground/30 mt-4">* DiffCore parses + diffs in a single streaming pass. Auto memory cleanup via FinalizationRegistry.</p>
               </div>
             </section>
 

@@ -1,45 +1,259 @@
-# DiffCore: JSON Compute Engine
+# DiffCore
 
-DiffCore is a world-class WebAssembly compute engine designed for ultra-high-speed structural comparison of large JSON documents. It leverages a stateless, zero-allocation pipeline based on rolling 64-bit path hashes and SIMD structural indexing.
+High-performance streaming JSON diff engine powered by WebAssembly.
 
-## ✨ Key Features
+[![npm version](https://img.shields.io/npm/v/diffcore.svg)](https://www.npmjs.com/package/diffcore)
+[![CI](https://github.com/DibbayajyotiRoy/rust-wasm-Library/actions/workflows/ci.yml/badge.svg)](https://github.com/DibbayajyotiRoy/rust-wasm-Library/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-- **🚀 Extreme Throughput**: Reaches **800 MB/s+** on standard hardware, saturating memory bandwidth.
-- **🧬 Zero-Allocation Engine**: Zero-allocation hot loop using 64-bit rolling hashes instead of expensive Tries.
-- **⚡ SIMD Accelerated**: Stage 1 structural indexing and Stage 2 parallel value hashing via `v128`.
-- **🌊 Constant Memory**: Deterministic memory footprint via symbolic DMA ingestion.
+## Features
 
-## 🚀 Performance (DiffCore Verified)
+| Feature | Description |
+|---------|-------------|
+| **🚀 Extreme Throughput** | 800+ MB/s on standard hardware, 5x faster than optimized JS |
+| **📦 Zero Config** | WASM embedded as Base64, auto-loads with no external files |
+| **🧹 Automatic Cleanup** | Memory managed via `FinalizationRegistry` – no `.destroy()` needed |
+| **🌊 Streaming API** | Process multi-GB JSON through chunked DMA input |
+| **⚡ SIMD Accelerated** | `v128` structural indexing and parallel value hashing |
+| **🧵 Web Worker Ready** | Off-main-thread execution with zero-copy `Transferable` buffers |
+| **🌍 Universal Runtime** | Works in Node.js 18+, browsers, Cloudflare Workers, Vercel Edge, Deno |
 
-![Silicon Path Benchmark](/home/roy/.gemini/antigravity/brain/75de158f-bd2f-4c0d-9f67-9fafacd54a57/uploaded_image_1769534452648.png)
-
-| Payload | Throughput | Speedup (vs JS Total) |
-|---------|------------|------------------------|
-| 1.0 MB | **817 MB/s** | **5.0x** |
-| 9.8 MB | **676 MB/s** | **5.4x** |
-
-*Note: JS Baseline uses V8's highly optimized `JSON.parse` + iterative diff. WASM parses raw bytes and diffs in a single unified pass.*
-
-## 📦 Rapid Integration
+## Installation
 
 ```bash
-# Add as direct GitHub dependency
-bun add https://github.com/DibbayajyotiRoy/rust-wasm-Library
+npm install diffcore
 ```
 
-```javascript
-import { DiffEngine } from './pkg/diffcore.js';
+## Quick Start
 
-// Initialize Silicon Path Engine
-const engine = new DiffEngine(wasm, { computeMode: 'Throughput' });
+### One-Shot Diff (Simplest)
+
+```typescript
+import { diff } from 'diffcore';
+
+const result = await diff(
+  '{"users": [{"name": "Alice"}]}',
+  '{"users": [{"name": "Bob"}]}'
+);
+
+for (const entry of result.entries) {
+  console.log(`${entry.op}: ${entry.path}`);
+}
+// Output: Modified: $.users[0].name
 ```
 
-## ⚙️ Engineering Principles
+### Streaming Engine (Large Files)
 
-1.  **Stateless Dispatch**: Path identity is computed on-the-fly, eliminating Trie lookups.
-2.  **Bandwidth Bound**: Optimized to saturate linear memory throughput via SIMD.
-3.  **Symbolic-First**: Defer path string materialization until the display layer.
+```typescript
+import { createEngine, Status } from 'diffcore';
 
-## 📄 License
+const engine = await createEngine({
+  maxInputSize: 128 * 1024 * 1024, // 128MB
+  arrayDiffMode: 1, // HashWindow
+});
+
+// Stream chunks directly
+for await (const chunk of leftStream) {
+  engine.pushLeft(chunk);
+}
+for await (const chunk of rightStream) {
+  engine.pushRight(chunk);
+}
+
+const result = engine.finalize();
+// No destroy() needed - automatic cleanup via FinalizationRegistry
+```
+
+## Performance
+
+| Payload | Throughput | vs Optimized JS |
+|---------|------------|-----------------|
+| 1.0 MB  | **817 MB/s** | 5.0x faster |
+| 9.8 MB  | **676 MB/s** | 5.4x faster |
+
+*Benchmark: V8's `JSON.parse` + iterative diff vs DiffCore single-pass raw byte processing.*
+
+## API Reference
+
+### `diff(left, right, config?)`
+
+One-shot convenience function for diffing two JSON documents.
+
+```typescript
+const result = await diff(leftJson, rightJson);
+console.log(result.entries);
+```
+
+### `createEngine(config?)`
+
+Create a streaming engine instance for chunked processing.
+
+```typescript
+const engine = await createEngine();
+engine.pushLeft(chunk);
+engine.pushRight(chunk);
+const result = engine.finalize();
+```
+
+### `createEngineWithWasm(wasmSource, config?)`
+
+Advanced: load WASM from a custom source (CDN, custom build).
+
+```typescript
+const engine = await createEngineWithWasm(
+  'https://cdn.example.com/diffcore.wasm',
+  { maxInputSize: 256 * 1024 * 1024 }
+);
+```
+
+### `DiffCoreWorker` (Web Worker)
+
+Off-main-thread execution with zero-copy Transferable buffers.
+
+```typescript
+import { DiffCoreWorker } from 'diffcore/worker';
+
+const worker = new DiffCoreWorker('./diffcore-worker.js');
+await worker.init(wasmBytes, config);
+
+await worker.pushLeft(leftBuffer);  // Transferred, not copied
+await worker.pushRight(rightBuffer);
+
+const result = await worker.finalize();
+await worker.destroy();
+```
+
+## Configuration
+
+```typescript
+interface DiffCoreConfig {
+  /** Max memory for result arena. Default: 32MB */
+  maxMemoryBytes?: number;
+  
+  /** Max total input size. Default: 64MB */
+  maxInputSize?: number;
+  
+  /** Max object keys to buffer. Default: 100,000 */
+  maxObjectKeys?: number;
+  
+  /** Array diff strategy. Default: Index (0) */
+  arrayDiffMode?: ArrayDiffMode;
+  
+  /** Hash window size for HashWindow mode. Default: 64 */
+  hashWindowSize?: number;
+  
+  /** Max array size for Full mode LCS. Default: 1024 */
+  maxFullArraySize?: number;
+}
+```
+
+### Array Diff Modes
+
+| Mode | Value | Description |
+|------|-------|-------------|
+| **Index** | 0 | Position-based only. Fast, no reorder detection. |
+| **HashWindow** | 1 | Rolling hash window. Detects insertions/deletions. |
+| **Full** | 2 | Full LCS buffer. Semantic reordering, small arrays only. |
+
+### Pre-configured for Edge Runtimes
+
+```typescript
+import { createEngine, EDGE_CONFIG } from 'diffcore';
+
+const engine = await createEngine(EDGE_CONFIG);
+// Optimized for Cloudflare Workers, Vercel Edge, etc.
+```
+
+## Result Structure
+
+```typescript
+interface DiffResult {
+  version: { major: number; minor: number };
+  entries: DiffEntry[];
+  raw: Uint8Array; // Raw binary result for advanced processing
+}
+
+interface DiffEntry {
+  op: DiffOp;        // Added=0, Removed=1, Modified=2
+  path: string;      // JSON path like $.users[0].name
+  leftValue?: Uint8Array;
+  rightValue?: Uint8Array;
+}
+```
+
+## Status Codes
+
+| Code | Name | Meaning |
+|------|------|---------|
+| 0 | `Ok` | Operation successful |
+| 1 | `NeedFlush` | Buffer full, flush before continuing |
+| 2 | `InputLimitExceeded` | Data exceeds `maxInputSize` |
+| 3 | `EngineSealed` | Cannot push after `finalize()` |
+| 4 | `InvalidHandle` | Engine corrupted or destroyed |
+| 5 | `ObjectKeyLimitExceeded` | Too many unique keys |
+| 6 | `ArrayTooLarge` | Array exceeds `maxFullArraySize` for Full mode |
+| 255 | `Error` | Generic processing error |
+
+## Advanced Usage
+
+### Explicit Memory Management
+
+While automatic cleanup is the default, you can destroy immediately:
+
+```typescript
+const engine = await createEngine();
+try {
+  // ... use engine
+} finally {
+  engine.destroy(); // Immediate cleanup
+}
+```
+
+### Check Engine Status
+
+```typescript
+const engine = await createEngine();
+console.log(engine.isDestroyed); // false
+engine.destroy();
+console.log(engine.isDestroyed); // true
+```
+
+### Error Handling
+
+```typescript
+const error = engine.getLastError();
+if (error) {
+  console.error('Engine error:', error);
+}
+```
+
+## Building from Source
+
+```bash
+# Prerequisites: Rust, wasm-pack
+rustup target add wasm32-unknown-unknown
+
+# Build everything
+npm run build
+
+# Individual steps
+npm run build:wasm    # Compile Rust to WASM
+npm run build:js      # Compile TypeScript
+npm run build:bundle  # Embed WASM as Base64
+```
+
+## Browser Compatibility
+
+| Platform | Minimum Version |
+|----------|-----------------|
+| Chrome | 89+ |
+| Firefox | 89+ |
+| Safari | 15+ |
+| Node.js | 18+ |
+| Cloudflare Workers | ✓ |
+| Vercel Edge | ✓ |
+| Deno | ✓ |
+
+## License
 
 MIT

@@ -55,8 +55,15 @@ impl ResultArena {
     ) -> Result<(), ArenaError> {
         if self.sealed { return Err(ArenaError::Sealed); }
 
-        // Entry format v2.1: 24 bytes (fixed size, 8-aligned)
-        const ENTRY_SIZE: usize = 24;
+        // Entry format v2.1: 32 bytes (fixed size, 8-aligned)
+        // [0]     op (u8)
+        // [1..8]  reserved/padding
+        // [8..16] path_id (u64)
+        // [16..20] left_offset (u32)
+        // [20..24] left_len (u32)
+        // [24..28] right_offset (u32)
+        // [28..32] right_len (u32)
+        const ENTRY_SIZE: usize = 32;
         if self.buffer.len() + ENTRY_SIZE > self.max_size {
             return Err(ArenaError::LimitExceeded);
         }
@@ -64,15 +71,14 @@ impl ResultArena {
         let (lo, ll) = left_val.unwrap_or((0, 0));
         let (ro, rl) = right_val.unwrap_or((0, 0));
 
-        // Single bulk write (24 bytes) - much faster than 7 separate calls
         let mut entry = [0u8; ENTRY_SIZE];
         entry[0] = op as u8;
-        entry[1..5].copy_from_slice(&path_id.0.to_le_bytes());
-        entry[5..9].copy_from_slice(&lo.to_le_bytes());
-        entry[9..13].copy_from_slice(&ll.to_le_bytes());
-        entry[13..17].copy_from_slice(&ro.to_le_bytes());
-        entry[17..21].copy_from_slice(&rl.to_le_bytes());
-        // entry[21..24] already zero (padding)
+        // entry[1..8] padding
+        entry[8..16].copy_from_slice(&path_id.0.to_le_bytes());
+        entry[16..20].copy_from_slice(&lo.to_le_bytes());
+        entry[20..24].copy_from_slice(&ll.to_le_bytes());
+        entry[24..28].copy_from_slice(&ro.to_le_bytes());
+        entry[28..32].copy_from_slice(&rl.to_le_bytes());
         self.buffer.extend_from_slice(&entry);
 
         self.entry_count += 1;
