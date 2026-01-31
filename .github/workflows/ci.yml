@@ -29,6 +29,7 @@ jobs:
       - name: Build WASM
         run: |
           cargo build --release
+          mkdir -p pkg
           cp target/wasm32-unknown-unknown/release/diffcore.wasm pkg/
 
       - name: Build TypeScript
