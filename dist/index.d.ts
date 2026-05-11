@@ -1,27 +1,36 @@
 /**
- * DiffCore - High-performance streaming JSON diff engine
+ * DiffCore — High-performance streaming JSON diff engine.
  *
- * Zero-config WASM-powered structural comparison with:
- * - Automatic WASM loading (embedded Base64)
- * - Automatic memory cleanup via FinalizationRegistry
- * - Streaming chunk-based input
- * - Path-aware hash-assisted diffing
+ * The simplest path is `diff(a, b)`:
  *
- * @example
- * ```typescript
+ * ```ts
  * import { diff } from 'diffcore';
  *
  * const result = await diff(
- *   '{"name": "Alice"}',
- *   '{"name": "Bob"}'
+ *   '{"users":[{"name":"Alice"}]}',
+ *   '{"users":[{"name":"Bob"}]}'
  * );
- * console.log(result.entries);
- * // No .destroy() needed - automatic cleanup
+ *
+ * for (const e of result.entries) {
+ *   console.log(e.op, e.path, e.leftValue, '→', e.rightValue);
+ *   // Modified  /users/0/name  Alice → Bob
+ * }
  * ```
+ *
+ * - **Real JSON Pointer paths** (RFC 6901), not opaque hashes.
+ * - **Decoded leaf values** (string / number / boolean / null).
+ * - **Standard interop**: `toJsonPatch(result)` emits RFC 6902 ops.
+ * - **State helpers**: `applyPatch` / `revertPatch` for undo / redo.
+ * - **Zero config**: WASM is embedded, no toolchain needed.
+ * - **Auto cleanup**: memory is freed via `FinalizationRegistry`.
  */
-import { Status, type DiffCoreConfig, type DiffResult } from './types.js';
-export { Status, DiffOp, ArrayDiffMode, EDGE_CONFIG, type DiffCoreConfig, type DiffEntry, type DiffResult, } from './types.js';
-/** Raw WASM exports */
+import { Status, type DiffCoreConfig, type DiffResult } from "./types.js";
+export { Status, DiffOp, ArrayDiffMode, EDGE_CONFIG, type DiffCoreConfig, type DiffEntry, type DiffResult, type JsonScalar, type JsonValue, type JsonPatchOp, } from "./types.js";
+export { applyPatch, revertPatch, toJsonPatch } from "./patch.js";
+export { formatDiff } from "./format.js";
+export { DiffCoreError, InvalidJsonError, EngineDestroyedError, FinalizationError } from "./errors.js";
+export { buildPathIndex, foldSegment, foldIndex, decodeLeafValue } from "./path-index.js";
+/** Raw WASM exports — internal use only. */
 interface WasmExports {
     memory: WebAssembly.Memory;
     create_engine: (configPtr: number, configLen: number) => number;
@@ -36,18 +45,15 @@ interface WasmExports {
     get_last_error_len: (enginePtr: number) => number;
 }
 /**
- * DiffCore Engine - streaming JSON diff with automatic memory management.
- *
- * Memory is automatically cleaned up when the engine is garbage collected.
- * You can still call `.destroy()` explicitly for immediate cleanup.
+ * Streaming engine. Push left and right inputs in chunks, then `finalize()`.
+ * Memory is freed automatically when the engine is garbage collected.
  *
  * @example
- * ```typescript
+ * ```ts
  * const engine = await createEngine();
- * engine.pushLeft(new TextEncoder().encode('{"a": 1}'));
- * engine.pushRight(new TextEncoder().encode('{"a": 2}'));
+ * engine.pushLeft(new TextEncoder().encode('{"a":1}'));
+ * engine.pushRight(new TextEncoder().encode('{"a":2}'));
  * const result = engine.finalize();
- * // No destroy() needed - automatic cleanup via FinalizationRegistry
  * ```
  */
 export declare class DiffEngine {
@@ -56,105 +62,41 @@ export declare class DiffEngine {
     private destroyed;
     private leftInputPtr;
     private rightInputPtr;
-    /** @internal Use createEngine() instead */
+    private leftWritten;
+    private rightWritten;
+    private resolvePaths;
+    private leftBuffer;
+    private rightBuffer;
+    /** @internal use `createEngine()`. */
     constructor(wasm: WasmExports, config?: DiffCoreConfig);
-    /**
-     * Allocate memory and write data to WASM linear memory.
-     * Uses memory from the heap base area (safe for configs).
-     */
     private allocAndWrite;
-    /**
-     * Push a chunk of the left (original) JSON document.
-     * Uses DMA: writes to managed buffer and commits.
-     * @param chunk - Uint8Array of JSON bytes
-     * @returns Status code indicating success or error
-     */
+    /** Push a chunk of the left (original) JSON document. */
     pushLeft(chunk: Uint8Array): Status;
-    /**
-     * Push a chunk of the right (modified) JSON document.
-     * Uses DMA: writes to managed buffer and commits.
-     * @param chunk - Uint8Array of JSON bytes
-     * @returns Status code indicating success or error
-     */
+    /** Push a chunk of the right (modified) JSON document. */
     pushRight(chunk: Uint8Array): Status;
-    /**
-     * Finalize the diff computation.
-     * After calling this, no more chunks can be pushed.
-     * @returns Parsed diff result with entries
-     */
+    /** Finalize the diff and return resolved entries. */
     finalize(): DiffResult;
-    /**
-     * Explicitly destroy the engine and free WASM memory.
-     *
-     * This is optional - memory is automatically cleaned up when the engine
-     * is garbage collected via FinalizationRegistry. Call this for immediate
-     * cleanup in memory-sensitive applications.
-     */
+    /** Free WASM memory immediately. Optional — GC handles it otherwise. */
     destroy(): void;
-    /**
-     * Check if the engine has been destroyed.
-     */
     get isDestroyed(): boolean;
-    /**
-     * Get last error message (if any).
-     * @returns Error message or null if no error
-     */
+    /** Last error message from the engine, if any. */
     getLastError(): string | null;
 }
 /**
- * Create a DiffCore engine instance with automatic WASM loading.
- *
- * The WASM module is embedded in the package and loaded automatically.
- * Memory is automatically cleaned up when the engine is garbage collected.
- *
- * @param config - Optional engine configuration with capability limits
- * @returns Promise resolving to a configured DiffEngine
- *
- * @example
- * ```typescript
- * const engine = await createEngine();
- * engine.pushLeft(new TextEncoder().encode('{"a": 1}'));
- * engine.pushRight(new TextEncoder().encode('{"a": 2}'));
- * const result = engine.finalize();
- * console.log(result.entries);
- * // No destroy() needed - automatic cleanup
- * ```
+ * Create an engine for streaming use. The WASM module is loaded automatically
+ * and cached across calls.
  */
 export declare function createEngine(config?: DiffCoreConfig): Promise<DiffEngine>;
-/**
- * Advanced: Create engine with custom WASM source.
- *
- * Use this if you want to:
- * - Load WASM from a CDN
- * - Use a custom-compiled WASM binary
- * - Control WASM caching yourself
- *
- * @param wasmSource - Path, URL, ArrayBuffer, or pre-compiled Module
- * @param config - Optional engine configuration
- */
+/** Advanced: create an engine from a custom WASM source (URL / bytes / module). */
 export declare function createEngineWithWasm(wasmSource: string | URL | ArrayBuffer | WebAssembly.Module, config?: DiffCoreConfig): Promise<DiffEngine>;
 /**
- * One-shot diff for convenience (non-streaming).
- *
- * This is the simplest way to diff two JSON documents. The WASM module is
- * loaded automatically and memory is cleaned up after the diff completes.
- *
- * @param left - Left (original) JSON as string or Uint8Array
- * @param right - Right (modified) JSON as string or Uint8Array
- * @param config - Optional engine configuration
- * @returns Promise resolving to diff result
+ * One-shot diff. The simplest entry point.
  *
  * @example
- * ```typescript
- * import { diff } from 'diffcore';
- *
- * const result = await diff(
- *   '{"users": [{"name": "Alice"}]}',
- *   '{"users": [{"name": "Bob"}]}'
- * );
- *
- * for (const entry of result.entries) {
- *   console.log(`${entry.op}: ${entry.path}`);
+ * ```ts
+ * const result = await diff(oldJson, newJson);
+ * for (const e of result.entries) {
+ *   console.log(`${DiffOp[e.op]} ${e.path}`, e.leftValue, '→', e.rightValue);
  * }
  * ```
  */

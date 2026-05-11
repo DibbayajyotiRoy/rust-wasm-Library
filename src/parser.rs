@@ -37,6 +37,10 @@ pub struct CompactParser {
     current_path_id: PathId,
     path_stack: Vec<PathId>,
     array_indices: Vec<usize>,
+    /// Per-open-container marker: `true` = array, `false` = object.
+    /// Used to disambiguate `,` semantics when an object is nested inside
+    /// an array (or vice versa). Equal in depth to `path_stack`.
+    container_is_array: Vec<bool>,
     expecting_key: bool,
     max_object_keys: u32,
     key_count: u32,
@@ -55,6 +59,7 @@ impl CompactParser {
             current_path_id: ROOT_PATH_ID,
             path_stack: Vec::with_capacity(128),
             array_indices: Vec::with_capacity(128),
+            container_is_array: Vec::with_capacity(128),
             expecting_key: false,
             max_object_keys,
             key_count: 0,
@@ -89,6 +94,7 @@ impl CompactParser {
                 b'{' => {
                     after_colon = false;
                     self.path_stack.push(self.current_path_id);
+                    self.container_is_array.push(false);
                     self.push_token(self.current_path_id, CompactEvent::StartObject, 0, 0, 0);
                     self.expecting_key = true;
                     self.key_count = 0;
@@ -96,40 +102,26 @@ impl CompactParser {
                 }
                 b'}' => {
                     after_colon = false;
-                    self.expecting_key = false;
                     self.current_path_id = self.path_stack.pop().unwrap_or(ROOT_PATH_ID);
+                    self.container_is_array.pop();
+                    // Restore expecting_key based on the new innermost container.
+                    self.expecting_key = false;
                     self.push_token(self.current_path_id, CompactEvent::EndObject, 0, 0, 0);
                     i += 1;
                 }
                 b'[' => {
                     after_colon = false;
                     self.path_stack.push(self.current_path_id);
+                    self.container_is_array.push(true);
                     self.push_token(self.current_path_id, CompactEvent::StartArray, 0, 0, 0);
                     self.array_indices.push(0);
                     self.current_path_id = fold_index_hash(self.current_path_id, 0);
                     i += 1;
-                    
-                    // Check for primitive value as first array element
-                    if i < len {
-                        let next_struct_pos = positions[i] as usize;
-                        let value_start = skip_whitespace(json, pos + 1, next_struct_pos);
-                        if value_start < next_struct_pos {
-                            let first_char = unsafe { *json.get_unchecked(value_start) };
-                            if !matches!(first_char, b'"' | b'{' | b'[' | b']') {
-                                let value_end = find_primitive_end(json, value_start, next_struct_pos);
-                                if value_end > value_start {
-                                    let val_bytes = unsafe { json.get_unchecked(value_start..value_end) };
-                                    self.push_token(
-                                        self.current_path_id,
-                                        CompactEvent::Value,
-                                        hash_bytes_simd(val_bytes),
-                                        value_start as u32,
-                                        (value_end - value_start) as u32
-                                    );
-                                }
-                            }
-                        }
-                    }
+                    // First element (primitive or otherwise) is emitted by the
+                    // subsequent `,` or `]` handlers via their look-back scan.
+                    // The previous look-forward emit here caused the first
+                    // element to be hashed TWICE — invisible when both sides
+                    // matched, but produced duplicate tokens for [] vs [x,...].
                 }
                 b']' => {
                     // Check for last primitive value before closing bracket
@@ -157,6 +149,7 @@ impl CompactParser {
                     after_colon = false;
                     self.array_indices.pop();
                     self.current_path_id = self.path_stack.pop().unwrap_or(ROOT_PATH_ID);
+                    self.container_is_array.pop();
                     self.push_token(self.current_path_id, CompactEvent::EndArray, 0, 0, 0);
                     i += 1;
                 }
@@ -221,8 +214,11 @@ impl CompactParser {
                     }
                 }
                 b',' => {
-                    // Check if we're in array context
-                    let in_array = !self.array_indices.is_empty();
+                    // The IMMEDIATELY enclosing container determines `,` semantics.
+                    // Without this check, commas between object keys *inside* an
+                    // outer array got misread as array-element separators —
+                    // producing bogus pathIds and hashing keys as values.
+                    let in_array = matches!(self.container_is_array.last(), Some(true));
                     
                     if in_array {
                         // Check if there's a primitive value before this comma (array element)
@@ -273,6 +269,7 @@ impl CompactParser {
         self.current_path_id = ROOT_PATH_ID;
         self.path_stack.clear();
         self.array_indices.clear();
+        self.container_is_array.clear();
         self.expecting_key = false;
         self.key_count = 0;
         self.total_bytes = 0;

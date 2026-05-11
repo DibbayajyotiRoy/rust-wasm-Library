@@ -1,52 +1,95 @@
 {
   "name": "diffcore",
-  "version": "1.0.1",
-  "description": "High-performance streaming JSON diff engine powered by WebAssembly",
+  "version": "1.1.0",
+  "description": "Fast WebAssembly JSON diff engine. Returns real JSON Pointer paths and decoded values. Includes applyPatch, revertPatch, RFC 6902 JSON Patch output, a React hook, and a CLI.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "diffcore": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./react": {
+      "import": "./dist/react.js",
+      "types": "./dist/react.d.ts"
+    },
     "./worker": {
       "import": "./dist/worker.js",
       "types": "./dist/worker.d.ts"
-    }
+    },
+    "./wasm": "./dist/diffcore.wasm",
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
     "README.md",
+    "AGENTS.md",
     "LICENSE"
   ],
   "scripts": {
-    "build:wasm": "cargo build --release && cp target/wasm32-unknown-unknown/release/diffcore.wasm pkg/",
+    "build:wasm": "cargo build --release --target wasm32-unknown-unknown && mkdir -p pkg && cp target/wasm32-unknown-unknown/release/diffcore.wasm pkg/",
     "build:js": "tsc",
     "build:bundle": "node scripts/embed-wasm.mjs",
     "build": "npm run build:wasm && npm run build:js && npm run build:bundle",
     "prepublishOnly": "npm run build",
-    "test": "node --test test/"
+    "test": "node test/edge-cases.mjs && node test/smoke.mjs"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/DibbayajyotiRoy/rust-wasm-Library.git"
   },
+  "homepage": "https://github.com/DibbayajyotiRoy/rust-wasm-Library#readme",
+  "bugs": {
+    "url": "https://github.com/DibbayajyotiRoy/rust-wasm-Library/issues"
+  },
   "keywords": [
     "json",
+    "json-diff",
     "diff",
+    "json-patch",
+    "rfc6902",
+    "rfc-6902",
+    "json-pointer",
+    "rfc6901",
+    "patch",
+    "apply-patch",
     "wasm",
     "webassembly",
+    "rust",
     "streaming",
-    "performance"
+    "performance",
+    "fast",
+    "simd",
+    "react",
+    "state-sync",
+    "undo-redo",
+    "optimistic-update",
+    "compare-json",
+    "object-diff",
+    "deep-diff"
   ],
   "author": "DibbayajyotiRoy",
   "license": "MIT",
+  "peerDependencies": {
+    "react": "^17.0.0 || ^18.0.0 || ^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/react": "^18.3.28",
+    "react": "^18.3.1",
     "typescript": "^5.3.0"
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "sideEffects": false
 }

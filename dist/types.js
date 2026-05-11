@@ -1,13 +1,10 @@
 /**
  * DiffCore - High-performance streaming JSON diff engine
  *
- * WASM-powered structural comparison with:
- * - Streaming chunk-based input
- * - Path-aware hash-assisted diffing
- * - Zero-copy memory model
- * - Backpressure via Status codes
+ * Public types. The runtime API resolves paths to JSON Pointers and values
+ * back to JS primitives by walking the input bytes alongside the WASM diff.
  */
-/** Status codes returned by engine operations */
+/** Status codes returned by engine operations. */
 export var Status;
 (function (Status) {
     Status[Status["Ok"] = 0] = "Ok";
@@ -19,24 +16,24 @@ export var Status;
     Status[Status["ArrayTooLarge"] = 6] = "ArrayTooLarge";
     Status[Status["Error"] = 255] = "Error";
 })(Status || (Status = {}));
-/** Array diff strategy */
+/** Array diff strategy. */
 export var ArrayDiffMode;
 (function (ArrayDiffMode) {
-    /** Position-based only (fast, no reorder detection) */
+    /** Position-based only (fast, no reorder detection). */
     ArrayDiffMode[ArrayDiffMode["Index"] = 0] = "Index";
-    /** Rolling hash window (detects insertions/deletions) */
+    /** Rolling hash window (detects insertions / deletions). */
     ArrayDiffMode[ArrayDiffMode["HashWindow"] = 1] = "HashWindow";
-    /** Full buffer with LCS (semantic reordering, small arrays only) */
+    /** Full buffer with LCS (semantic reordering, small arrays only). */
     ArrayDiffMode[ArrayDiffMode["Full"] = 2] = "Full";
 })(ArrayDiffMode || (ArrayDiffMode = {}));
-/** Diff operation type */
+/** Diff operation type. */
 export var DiffOp;
 (function (DiffOp) {
     DiffOp[DiffOp["Added"] = 0] = "Added";
     DiffOp[DiffOp["Removed"] = 1] = "Removed";
     DiffOp[DiffOp["Modified"] = 2] = "Modified";
 })(DiffOp || (DiffOp = {}));
-/** Edge runtime optimized config */
+/** Edge-runtime-optimized config. */
 export const EDGE_CONFIG = {
     maxMemoryBytes: 16 * 1024 * 1024,
     maxInputSize: 32 * 1024 * 1024,

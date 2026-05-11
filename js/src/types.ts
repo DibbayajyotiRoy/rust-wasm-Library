@@ -1,14 +1,11 @@
 /**
  * DiffCore - High-performance streaming JSON diff engine
- * 
- * WASM-powered structural comparison with:
- * - Streaming chunk-based input
- * - Path-aware hash-assisted diffing
- * - Zero-copy memory model
- * - Backpressure via Status codes
+ *
+ * Public types. The runtime API resolves paths to JSON Pointers and values
+ * back to JS primitives by walking the input bytes alongside the WASM diff.
  */
 
-/** Status codes returned by engine operations */
+/** Status codes returned by engine operations. */
 export enum Status {
     Ok = 0,
     NeedFlush = 1,
@@ -20,40 +17,46 @@ export enum Status {
     Error = 255,
 }
 
-/** Array diff strategy */
+/** Array diff strategy. */
 export enum ArrayDiffMode {
-    /** Position-based only (fast, no reorder detection) */
+    /** Position-based only (fast, no reorder detection). */
     Index = 0,
-    /** Rolling hash window (detects insertions/deletions) */
+    /** Rolling hash window (detects insertions / deletions). */
     HashWindow = 1,
-    /** Full buffer with LCS (semantic reordering, small arrays only) */
+    /** Full buffer with LCS (semantic reordering, small arrays only). */
     Full = 2,
 }
 
-/** Diff operation type */
+/** Diff operation type. */
 export enum DiffOp {
     Added = 0,
     Removed = 1,
     Modified = 2,
 }
 
-/** Engine configuration with capability limits */
+/** Engine configuration with capability limits. */
 export interface DiffCoreConfig {
-    /** Maximum memory for result arena (bytes). Default: 32MB */
+    /** Maximum memory for result arena (bytes). Default: 32MB. */
     maxMemoryBytes?: number;
-    /** Maximum total input size (bytes). Default: 64MB */
+    /** Maximum total input size (bytes). Default: 64MB. */
     maxInputSize?: number;
-    /** Maximum object keys to buffer. Default: 100,000 */
+    /** Maximum object keys to buffer. Default: 100,000. */
     maxObjectKeys?: number;
-    /** Array diff strategy. Default: Index */
+    /** Array diff strategy. Default: Index. */
     arrayDiffMode?: ArrayDiffMode;
-    /** Hash window size for HashWindow mode. Default: 64 */
+    /** Hash window size for HashWindow mode. Default: 64. */
     hashWindowSize?: number;
-    /** Maximum array size for Full mode. Default: 1024 */
+    /** Maximum array size for Full mode. Default: 1024. */
     maxFullArraySize?: number;
+    /**
+     * Resolve `path` strings to real JSON Pointers and decode `value` fields.
+     * Adds a small one-pass JS walk over each input. Default: true.
+     * Set to false for raw-hash paths (slightly faster, rarely useful).
+     */
+    resolvePaths?: boolean;
 }
 
-/** Edge runtime optimized config */
+/** Edge-runtime-optimized config. */
 export const EDGE_CONFIG: DiffCoreConfig = {
     maxMemoryBytes: 16 * 1024 * 1024,
     maxInputSize: 32 * 1024 * 1024,
@@ -63,17 +66,49 @@ export const EDGE_CONFIG: DiffCoreConfig = {
     maxFullArraySize: 512,
 };
 
-/** A single diff entry */
+/**
+ * A single diff entry. By default the engine resolves paths and values for
+ * you; the raw bytes and hash are still exposed for advanced consumers.
+ */
 export interface DiffEntry {
+    /** Add / Remove / Modify. */
     op: DiffOp;
+    /** JSON Pointer (RFC 6901), e.g. `/users/0/name`. Empty string for the document root. */
     path: string;
-    leftValue?: Uint8Array;
-    rightValue?: Uint8Array;
+    /** Decoded left-hand value (null for `Added`). */
+    leftValue?: JsonScalar;
+    /** Decoded right-hand value (null for `Removed`). */
+    rightValue?: JsonScalar;
+    /** Raw left bytes from the original input (unparsed). */
+    leftBytes?: Uint8Array;
+    /** Raw right bytes from the original input (unparsed). */
+    rightBytes?: Uint8Array;
+    /** Engine path hash (FNV-1a). Use this for fast equality checks. */
+    pathId: bigint;
 }
 
-/** Diff result with parsed entries */
+/** Leaf-level JSON values that the engine compares. */
+export type JsonScalar = string | number | boolean | null;
+
+/** A standalone JSON value tree (used by patch helpers). */
+export type JsonValue =
+    | JsonScalar
+    | JsonValue[]
+    | { [k: string]: JsonValue };
+
+/** Diff result with structured entries. */
 export interface DiffResult {
     version: { major: number; minor: number };
     entries: DiffEntry[];
+    /** Raw result buffer from the engine — opaque, exposed for tooling. */
     raw: Uint8Array;
 }
+
+/** RFC 6902 JSON Patch operation. */
+export type JsonPatchOp =
+    | { op: "add"; path: string; value: JsonValue }
+    | { op: "remove"; path: string }
+    | { op: "replace"; path: string; value: JsonValue }
+    | { op: "move"; path: string; from: string }
+    | { op: "copy"; path: string; from: string }
+    | { op: "test"; path: string; value: JsonValue };

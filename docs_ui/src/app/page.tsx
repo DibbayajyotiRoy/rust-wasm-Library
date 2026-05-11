@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Zap, Cpu, Layers, Github, Terminal, ArrowRight, Trash2, Repeat, Box } from "lucide-react";
 import { Navigation } from "@/components/Navigation";
@@ -10,12 +10,46 @@ import { ArchitectureDiagram } from "@/components/ArchitectureDiagram";
 import { CodeBlock } from "@/components/CodeBlock";
 import { cn } from "@/lib/utils";
 
-const HERO_METRICS = [
-  { value: "42ms", label: "Latency (10MB)" },
-  { value: "750 MB/s", label: "Throughput" },
-  { value: "Auto", label: "Memory Cleanup" },
-  { value: "NPM", label: "Registry" },
-];
+function formatCount(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "k";
+  return n.toLocaleString("en-US");
+}
+
+function useNpmDownloads(pkg: string) {
+  const [data, setData] = useState<{ weekly: number | null; total: number | null }>({
+    weekly: null,
+    total: null,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const [weeklyRes, totalRes] = await Promise.all([
+          fetch(`https://api.npmjs.org/downloads/point/last-week/${pkg}`),
+          fetch(`https://api.npmjs.org/downloads/range/2010-01-01:${new Date().toISOString().slice(0, 10)}/${pkg}`),
+        ]);
+        const weekly = weeklyRes.ok ? await weeklyRes.json() : null;
+        const range = totalRes.ok ? await totalRes.json() : null;
+        if (cancelled) return;
+        const total =
+          range && Array.isArray(range.downloads)
+            ? range.downloads.reduce((s: number, d: { downloads: number }) => s + d.downloads, 0)
+            : null;
+        setData({ weekly: weekly?.downloads ?? null, total });
+      } catch {
+        if (!cancelled) setData({ weekly: null, total: null });
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [pkg]);
+
+  return data;
+}
 
 const ONBOARDING_STEPS = [
   {
@@ -92,6 +126,23 @@ const DOCS_CONTENT = {
 export default function Home() {
   const [activeTab, setActiveTab] = useState("web");
   const [activeStep, setActiveStep] = useState(0);
+  const { weekly, total } = useNpmDownloads("diffcore");
+
+  const heroMetrics = [
+    { value: "42ms", label: "Latency (10MB)" },
+    { value: "750 MB/s", label: "Throughput" },
+    {
+      value: weekly === null ? "—" : formatCount(weekly),
+      label: "Downloads / week",
+      href: "https://www.npmjs.com/package/diffcore",
+      sub: total !== null ? `${formatCount(total)} all-time` : undefined,
+    },
+    {
+      value: "v1.1",
+      label: "On NPM",
+      href: "https://www.npmjs.com/package/diffcore",
+    },
+  ];
 
   const currentSteps = DOCS_CONTENT[activeTab as keyof typeof DOCS_CONTENT];
   const activeContent = currentSteps[activeStep];
@@ -191,12 +242,40 @@ export default function Home() {
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-black/5 border-y border-black/5 py-8">
-                {HERO_METRICS.map((m, i) => (
-                  <div key={i} className="px-6 space-y-1 first:pl-0">
-                    <div className="text-2xl md:text-3xl font-mono font-bold text-primary tracking-tighter leading-none">{m.value}</div>
-                    <div className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold leading-none">{m.label}</div>
-                  </div>
-                ))}
+                {heroMetrics.map((m, i) => {
+                  const inner = (
+                    <div className="space-y-1">
+                      <div className="text-2xl md:text-3xl font-mono font-bold text-primary tracking-tighter leading-none">
+                        {m.value}
+                      </div>
+                      <div className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold leading-none">
+                        {m.label}
+                      </div>
+                      {m.sub && (
+                        <div className="text-[10px] font-mono text-foreground/30 pt-1 leading-none">
+                          {m.sub}
+                        </div>
+                      )}
+                    </div>
+                  );
+                  return (
+                    <div key={i} className="px-6 first:pl-0">
+                      {m.href ? (
+                        <a
+                          href={m.href}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block hover:text-accent transition-colors"
+                          aria-label={`${m.label}: ${m.value}`}
+                        >
+                          {inner}
+                        </a>
+                      ) : (
+                        inner
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </header>
 
