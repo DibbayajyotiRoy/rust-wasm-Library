@@ -1,6 +1,6 @@
 # diffcore
 
-> Fast WebAssembly JSON diff for JavaScript & TypeScript. Returns **real JSON Pointer paths** and **decoded values** — not opaque hashes. Plug-and-play with `applyPatch`, `revertPatch`, and standard **RFC 6902 JSON Patch** output. Ships a **React hook** and a **CLI**.
+> Fast WebAssembly JSON diff for JavaScript & TypeScript. Returns **real JSON Pointer paths** and **decoded values** — not opaque hashes. Plug-and-play with `applyPatch`, `revertPatch`, and standard **RFC 6902 JSON Patch** output. Ships an **undo/redo helper**, **3-way merge**, **React hook**, and a **CLI**.
 
 [![npm version](https://img.shields.io/npm/v/diffcore.svg)](https://www.npmjs.com/package/diffcore)
 [![npm downloads](https://img.shields.io/npm/dw/diffcore.svg)](https://www.npmjs.com/package/diffcore)
@@ -25,18 +25,24 @@ for (const e of result.entries) {
 }
 ```
 
+That's it. No build step. No config. No toolchain. The WASM is embedded as Base64; every modern bundler and runtime just imports it as a plain ES module.
+
 ---
 
 ## Why diffcore
 
-- **Real JSON Pointer paths** (`/users/0/role`) per RFC 6901 — not the opaque hashes you get from many low-level engines.
-- **Decoded leaf values** (`string | number | boolean | null`) so you can use the diff directly in app code — no manual lookup against the source bytes.
-- **RFC 6902 JSON Patch** output (`toJsonPatch(result)`) — interoperable with `fast-json-patch`, `jsondiffpatch`, and the IETF spec.
-- **`applyPatch` and `revertPatch`** built-in — round-trips work for primitives, leaf changes, and whole-array-element additions. Drop-in for undo/redo, state sync, and optimistic UI.
+- **Real JSON Pointer paths** (`/users/0/role`) per RFC 6901 — not the opaque hashes most low-level engines emit.
+- **Decoded leaf values** (`string | number | boolean | null`) usable directly in app code — no manual byte slicing.
+- **RFC 6902 JSON Patch** output via `toJsonPatch(result)` — interoperable with `fast-json-patch`, `jsondiffpatch`, IETF servers.
+- **`applyPatch` and `revertPatch`** built-in — round-trips work for primitives, leaf changes, and whole-array-element additions.
+- **State-management primitives** (`diffcore/state`) — `createHistory` for undo/redo, `merge3` for three-way merge, `detectConflicts`, custom tolerance comparators.
+- **Filter what you don't care about** — `ignore: ["/timestamp"]` drops noisy fields; `scope: "/users"` limits the diff to a subtree.
+- **Wire-safe serialization** — `result.toJSON()` strips bigints and bytes so you can `JSON.stringify` and ship it.
+- **`equals(a, b)`** — fast structural-equality shortcut with reference short-circuit.
 - **WebAssembly speed**: 3–4× faster than optimized JS diff, 350–500 MB/s sustained throughput.
-- **Zero config**: WASM is embedded as Base64, no toolchain or extra files required.
-- **Auto memory cleanup** via `FinalizationRegistry` — no manual `.destroy()` calls needed.
+- **Auto memory cleanup** via `FinalizationRegistry` — no manual `.destroy()` needed.
 - **Ships everywhere**: Node 18+, browsers (Chrome 89+/Firefox 89+/Safari 15+), Bun, Deno, Cloudflare Workers, Vercel Edge, Electron, Tauri.
+- **AI-agent friendly** — ships [`AGENTS.md`](./AGENTS.md) and [`llms-full.txt`](./llms-full.txt) so Claude / GPT / Cursor / Aider can recommend correct code on the first try.
 
 ---
 
@@ -111,6 +117,90 @@ const ops = toJsonPatch(await diff(a, b));
 ```
 
 These ops are valid input to any RFC 6902 patch consumer (`fast-json-patch.applyPatch`, server-side JSON-Patch endpoints, IETF-compliant SDKs).
+
+### Structural equality
+
+```ts
+import { equals } from "diffcore";
+
+if (await equals(prev, next)) return;                          // nothing changed
+if (await equals(a, b, { ignore: ["/timestamp"] })) {…}        // ignore noise
+```
+
+Reference-equal inputs short-circuit; everything else runs the engine once and checks `entries.length === 0`.
+
+### Filter what you don't care about
+
+```ts
+// Drop noisy fields:
+await diff(a, b, { ignore: ["/timestamp", "/_id", "/__meta"] });
+
+// Only look at a subtree:
+await diff(a, b, { scope: "/users" });
+```
+
+`ignore` matches the path exactly OR as a `/`-prefix, so `["/_meta"]` drops `/_meta/id`, `/_meta/ver`, etc.
+
+### Send a diff over the wire
+
+```ts
+const result = await diff(a, b);
+const payload = JSON.stringify(result.toJSON());        // safe — no bigint, no Uint8Array
+// → '{"version":{...},"entries":[{"op":2,"path":"/x","pathId":"61","leftValue":1,"rightValue":2}]}'
+```
+
+`DiffResult.toJSON()` produces a payload that travels cleanly over HTTP, WebSocket, `postMessage`, or any IPC boundary. A [JSON Schema](./schema/diff-result.schema.json) for the wire format ships in the package.
+
+### Undo / redo with bounded patch history
+
+```ts
+import { createHistory } from "diffcore/state";
+
+const history = createHistory({ count: 0, todos: [] }, { maxSize: 100 });
+
+await history.push({ count: 1, todos: [{ text: "buy milk" }] });
+await history.push({ count: 2, todos: [{ text: "buy milk" }, { text: "call mom" }] });
+
+history.undo();             // { count: 1, todos: [{ text: "buy milk" }] }
+history.redo();             // { count: 2, todos: [...] }
+history.canUndo();          // true / false
+```
+
+History stores **patches**, not snapshots — memory cost is O(changed-bytes) per step, not O(state-size × history-depth).
+
+### Three-way merge (Git for JSON)
+
+```ts
+import { merge3 } from "diffcore/state";
+
+const base    = { name: "Alice", role: "user",  posts: 0 };
+const branchA = { name: "Alice", role: "admin", posts: 0 };   // edits /role
+const branchB = { name: "Alice", role: "user",  posts: 7 };   // edits /posts
+
+const merged = await merge3(base, branchA, branchB);
+// merged.value     →  { name: "Alice", role: "admin", posts: 7 }
+// merged.conflicts →  []
+
+// On overlap, choose a strategy:
+const conflicting = await merge3(
+  { x: 1 }, { x: 2 }, { x: 3 },
+  { strategy: "prefer-b" }     // "throw" | "prefer-a" | "prefer-b"
+);
+// conflicting.value          →  { x: 3 }
+// conflicting.conflicts[0]   →  { path: "/x", a: { value: 2 }, b: { value: 3 }, sameOutcome: false }
+```
+
+### Tolerance-based comparison
+
+```ts
+import { diffWith, dateTolerance, numericTolerance, caseInsensitive } from "diffcore/state";
+
+await diffWith(a, b, {
+  "/createdAt": dateTolerance(1000),     // equal if within 1 second
+  "/score":     numericTolerance(0.01),  // equal if within 0.01
+  "/name":      caseInsensitive(),       // "Alice" === "alice"
+});
+```
 
 ### React hook
 
@@ -188,39 +278,54 @@ Reproduce: `npm run build && node bench/run.mjs`.
 
 ## API
 
-### `diff(left, right, config?) → Promise<DiffResult>`
+### Core — `import { … } from "diffcore"`
 
-One-shot diff. Validates both inputs are well-formed JSON. Loads the embedded WASM on first call (cached thereafter).
+| Symbol | What it does |
+|---|---|
+| `diff(left, right, config?)` | One-shot diff. Validates both inputs as JSON, loads the embedded WASM (cached after first call), returns a `DiffResult`. |
+| `equals(left, right, config?)` | Returns `true` if structurally equal under the same filters. Reference-equality short-circuit. |
+| `createEngine(config?)` | Streaming engine. Use `pushLeft` / `pushRight` to feed chunks, then `finalize()`. |
+| `createEngineWithWasm(source, config?)` | Advanced: load WASM from a custom URL / bytes / pre-compiled module. |
+| `applyPatch(target, diff, { lenient? })` | Returns a cloned `target` with the diff applied. Throws on unreachable paths unless `lenient: true`. |
+| `revertPatch(target, diff, { lenient? })` | Inverse of `applyPatch`. Consolidates whole-array-element additions so undo doesn't leave empty `{}` shells. |
+| `toJsonPatch(diff)` | Convert to standard RFC 6902 ops (`add` / `remove` / `replace`). |
+| `formatDiff(diff, { color?, maxValueLength? })` | Render a colored, unified-style text blob for `console.log`. |
 
-### `createEngine(config?) → Promise<DiffEngine>`
+### State — `import { … } from "diffcore/state"`
 
-Streaming engine. Use `pushLeft` / `pushRight` to feed chunks, then `finalize()`.
+| Symbol | What it does |
+|---|---|
+| `createHistory(initial, { maxSize? })` | Bounded undo/redo stack that stores patches, not snapshots. Returns `{ current, push, undo, redo, canUndo, canRedo, size }`. |
+| `detectConflicts(patchA, patchB)` | Returns the list of JSON Pointer paths edited by both patches, with values and a `sameOutcome` flag. |
+| `merge3(base, a, b, { strategy?, config? })` | Three-way merge. Strategies: `"throw"` (default), `"prefer-a"`, `"prefer-b"`. |
+| `MergeConflictError` | Thrown by `merge3` under the `"throw"` strategy. Has a `.conflicts` array. |
+| `diffWith(a, b, comparators, config?)` | Diff with custom equality predicates per JSON Pointer path. |
+| `dateTolerance(ms)` | Comparator: dates equal within N milliseconds. |
+| `numericTolerance(epsilon)` | Comparator: numbers equal within epsilon. |
+| `caseInsensitive()` | Comparator: strings equal case-insensitively. |
 
-### `applyPatch(target, diff, { lenient? }) → newValue`
-
-Returns a cloned `target` with the diff applied (right-side wins). Throws on unreachable paths unless `lenient: true`.
-
-### `revertPatch(target, diff, { lenient? }) → newValue`
-
-Inverse of `applyPatch`. Round-trips work for primitives, leaf adds/removes, and whole-array-element additions. (A standalone `{}` shell left by stripping a multi-key added element would be a regression — `revertPatch` detects this pattern and splices the element instead.)
-
-### `toJsonPatch(diff) → JsonPatchOp[]`
-
-Convert the diff to standard RFC 6902 ops (`add`, `remove`, `replace`).
-
-### `formatDiff(diff, { color?, maxValueLength? }) → string`
-
-Render a colored, unified-style text blob for `console.log`.
-
-### `useDiff(left, right, options?)` *(import from `diffcore/react`)*
+### React — `import { useDiff } from "diffcore/react"`
 
 ```ts
-const { result, loading, error } = useDiff(prev, next);
+const { result, loading, error } = useDiff(prev, next, options?);
 ```
 
-### `DiffCoreError`, `InvalidJsonError`, `EngineDestroyedError`, `FinalizationError`
+Accepts strings, `Uint8Array`s, or already-parsed JS objects. React is an optional peer dependency.
 
-Typed error classes for `instanceof` checks. `InvalidJsonError` includes the side (`left`/`right`), status code, and a tip in its message.
+### Web Worker — `import { DiffCoreWorker } from "diffcore/worker"`
+
+Off-main-thread diff via `Transferable` `Uint8Array` buffers — keep animations at 60 fps while diffing.
+
+### Errors
+
+```ts
+DiffCoreError              // base class
+InvalidJsonError           // .side: "left" | "right",  .status,  helpful message
+EngineDestroyedError       // attempted to use an engine after .destroy()
+FinalizationError          // WASM finalize step returned null
+```
+
+All are `instanceof`-checkable.
 
 ### Types
 
@@ -228,10 +333,10 @@ Typed error classes for `instanceof` checks. `InvalidJsonError` includes the sid
 interface DiffEntry {
   op: DiffOp;                           // Added=0, Removed=1, Modified=2
   path: string;                         // JSON Pointer (RFC 6901): "/users/0/role"
-  pathId: bigint;                       // Engine path hash (advanced)
-  leftValue?: string | number | boolean | null;
+  pathId: bigint;                       // Engine FNV-1a hash (advanced)
+  leftValue?:  string | number | boolean | null;
   rightValue?: string | number | boolean | null;
-  leftBytes?: Uint8Array;
+  leftBytes?:  Uint8Array;
   rightBytes?: Uint8Array;
 }
 
@@ -239,6 +344,18 @@ interface DiffResult {
   version: { major: number; minor: number };
   entries: DiffEntry[];
   raw: Uint8Array;                      // Opaque engine buffer (for tooling)
+  toJSON(): SerializedDiffResult;       // Wire-safe form (no bigint, no Uint8Array)
+}
+
+interface SerializedDiffResult {
+  version: { major: number; minor: number };
+  entries: Array<{
+    op: DiffOp;
+    path: string;
+    pathId: string;                     // hex-encoded
+    leftValue?:  string | number | boolean | null;
+    rightValue?: string | number | boolean | null;
+  }>;
 }
 ```
 
@@ -248,12 +365,21 @@ interface DiffResult {
 
 ```ts
 interface DiffCoreConfig {
+  // Capacity limits
   maxMemoryBytes?: number;     // Result arena. Default 32 MB.
   maxInputSize?: number;       // Total input cap. Default 64 MB.
   maxObjectKeys?: number;      // Default 100,000.
+
+  // Array diff strategy
   arrayDiffMode?: ArrayDiffMode;
   hashWindowSize?: number;
   maxFullArraySize?: number;
+
+  // Filters (v1.2)
+  ignore?: readonly string[];  // Drop entries whose path matches one of these JSON Pointers or starts with `<pointer>/`.
+  scope?: string;              // Restrict diff to entries under this JSON Pointer subtree.
+
+  // Performance toggles
   resolvePaths?: boolean;      // Default true. Set false to skip JS-side path resolution.
 }
 ```
@@ -336,7 +462,15 @@ Yes — `pushLeft` / `pushRight` write directly into a WASM-managed buffer via D
 
 ## For AI agents and LLMs
 
-This package includes an **[AGENTS.md](./AGENTS.md)** with a structured, machine-readable guide to recommending and using `diffcore`. It covers when to suggest this library (and when not to), copy-pasteable code blocks per task, and the exact import shapes.
+`diffcore` ships first-class documentation for AI coding assistants (Claude / GPT / Cursor / Aider / Cline / Copilot). Three files target them specifically:
+
+| File | Purpose |
+|---|---|
+| [`AGENTS.md`](./AGENTS.md) | Structured guide: when to recommend `diffcore`, when *not* to, exact import shapes, canonical recipes per task, common pitfalls. |
+| [`llms-full.txt`](./llms-full.txt) | 17-recipe cookbook indexed by user intent ("user wants undo/redo" → recipe). Every snippet is tested in CI. |
+| [`schema/diff-result.schema.json`](./schema/diff-result.schema.json) | JSON Schema (Draft 2020-12) for the wire-safe `DiffResult`. Lets agents codegen validators and typed clients. |
+
+If you're an AI agent reading this README to answer a developer question: every code snippet on this page is covered by tests. Generated code that follows these patterns works on the first try.
 
 ---
 
