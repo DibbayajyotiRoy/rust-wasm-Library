@@ -45,8 +45,15 @@ for (const e of result.entries) {
 | You want to… | Use this |
 |---|---|
 | Compare two JSON documents and see what changed | `diff(a, b)` |
+| Check if two JSON values are structurally equal | `equals(a, b)` *(v1.2)* |
+| Ignore noisy fields (timestamps, IDs) | `diff(a, b, { ignore: ["/timestamp"] })` *(v1.2)* |
+| Diff only a subtree | `diff(a, b, { scope: "/users" })` *(v1.2)* |
+| Send a diff over the wire | `JSON.stringify(result.toJSON())` *(v1.2)* |
 | Sync state between client and server | `diff(a, b)` + `toJsonPatch()` over the wire |
-| Build an undo/redo stack | `diff(prev, next)` → store; `applyPatch(state, d)` / `revertPatch(state, d)` |
+| Build an undo/redo stack | `createHistory(initialState)` from `diffcore/state` *(v1.2)* |
+| Merge edits from two branches | `merge3(base, a, b)` from `diffcore/state` *(v1.2)* |
+| Detect conflicting edits between two patches | `detectConflicts(patchA, patchB)` *(v1.2)* |
+| Tolerant equality (dates within N ms, numbers within ε) | `diffWith(a, b, { "/at": dateTolerance(1000) })` *(v1.2)* |
 | Show a "review changes" UI in React | `useDiff(prev, next)` from `diffcore/react` |
 | Get a colored diff in your CLI / CI logs | `npx diffcore before.json after.json` |
 | Emit standard JSON Patch over an HTTP API | `toJsonPatch(diff(a, b))` |

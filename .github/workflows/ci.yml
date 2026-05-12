@@ -38,14 +38,20 @@ jobs:
       - name: Bundle WASM
         run: npm run build:bundle
 
-      - name: Run Tests
-        run: |
-          node -e "
-          import { diff } from './dist/index.js';
-          const r = await diff('{\"a\":1}', '{\"a\":2}');
-          if (r.entries.length !== 1) process.exit(1);
-          console.log('✓ All tests passed');
-          "
+      - name: Run edge-case test suite
+        run: node test/edge-cases.mjs
+
+      - name: Run stress test suite
+        run: node test/stress.mjs
+
+      - name: Run smoke test (applyPatch + revertPatch round-trip)
+        run: node test/smoke.mjs
+
+      - name: Run v1.2 feature tests (equals, ignore, scope, toJSON)
+        run: node test/v1.2-features.mjs
+
+      - name: Run v1.4 state-management tests (createHistory, merge3, conflicts, comparators)
+        run: node test/v1.4-state.mjs
 
       - name: Verify Package
         run: npm pack --dry-run

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/DibbayajyotiRoy/rust-wasm-Library/schema/diff-result.schema.json",
+  "title": "diffcore DiffResult (wire / serialized form)",
+  "description": "Shape of the object returned by DiffResult.toJSON(). Wire-safe — no bigint, no Uint8Array. Use this schema to validate diffs that crossed a process boundary (HTTP, WebSocket, postMessage).",
+  "type": "object",
+  "required": ["version", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "object",
+      "required": ["major", "minor"],
+      "additionalProperties": false,
+      "properties": {
+        "major": { "type": "integer", "minimum": 0 },
+        "minor": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/DiffEntry" }
+    }
+  },
+  "$defs": {
+    "DiffEntry": {
+      "type": "object",
+      "required": ["op", "path", "pathId"],
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "type": "integer",
+          "enum": [0, 1, 2],
+          "description": "0=Added, 1=Removed, 2=Modified."
+        },
+        "path": {
+          "type": "string",
+          "description": "RFC 6901 JSON Pointer. Empty string for the document root. Keys containing '/' are escaped as '~1'; '~' as '~0'.",
+          "pattern": "^$|^/.*"
+        },
+        "pathId": {
+          "type": "string",
+          "description": "Engine FNV-1a 64-bit path hash, hex-encoded.",
+          "pattern": "^[0-9a-f]{1,16}$"
+        },
+        "leftValue": {
+          "$ref": "#/$defs/JsonScalar",
+          "description": "Pre-change value. Absent on Added entries."
+        },
+        "rightValue": {
+          "$ref": "#/$defs/JsonScalar",
+          "description": "Post-change value. Absent on Removed entries."
+        }
+      }
+    },
+    "JsonScalar": {
+      "anyOf": [
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "boolean" },
+        { "type": "null" }
+      ]
+    }
+  }
+}

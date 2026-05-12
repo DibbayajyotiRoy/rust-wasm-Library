@@ -1,0 +1,66 @@
+name: Bug Report
+description: Report something that diffcore does wrong
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what did you get instead?
+      placeholder: |
+        I called diff(a, b) with these inputs and expected X but got Y.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Two JSON strings small enough to paste, plus the diffcore call.
+      render: ts
+      placeholder: |
+        import { diff } from "diffcore";
+
+        const result = await diff(
+          '{"a": 1}',
+          '{"a": 2}'
+        );
+        console.log(result.entries);
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: diffcore version
+      placeholder: e.g. 1.1.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      options:
+        - Node.js
+        - Bun
+        - Deno
+        - Browser
+        - Cloudflare Workers / Vercel Edge
+        - Other (describe below)
+    validations:
+      required: true
+
+  - type: input
+    id: runtime-version
+    attributes:
+      label: Runtime version
+      placeholder: e.g. Node 22.11.0, Bun 1.1.x, Chrome 131
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Stack traces, config used, whether you tried with `resolvePaths: false`, etc.

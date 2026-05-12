@@ -50,6 +50,27 @@ export interface DiffCoreConfig {
      * Set to false for raw-hash paths (slightly faster, rarely useful).
      */
     resolvePaths?: boolean;
+    /**
+     * Drop entries whose `path` matches one of these JSON Pointer strings or
+     * starts with one of them followed by `/`. Useful for ignoring noisy
+     * fields like `/timestamp`, `/_id`, or `/__meta`.
+     *
+     * @example
+     * ```ts
+     * await diff(a, b, { ignore: ["/fetchedAt", "/_id"] });
+     * ```
+     */
+    ignore?: readonly string[];
+    /**
+     * Restrict the diff to entries whose `path` starts with this JSON Pointer.
+     * Useful when you only care about changes under one subtree.
+     *
+     * @example
+     * ```ts
+     * await diff(a, b, { scope: "/users" });   // only entries under /users
+     * ```
+     */
+    scope?: string;
 }
 /** Edge-runtime-optimized config. */
 export declare const EDGE_CONFIG: DiffCoreConfig;
@@ -88,6 +109,31 @@ export interface DiffResult {
     entries: DiffEntry[];
     /** Raw result buffer from the engine — opaque, exposed for tooling. */
     raw: Uint8Array;
+    /**
+     * Convert to a `JSON.stringify`-safe plain object. `bigint` `pathId`s become
+     * hex strings; `raw` and per-entry byte buffers are omitted by default.
+     *
+     * @example
+     * ```ts
+     * const result = await diff(a, b);
+     * const payload = JSON.stringify(result.toJSON());   // safe to send over the wire
+     * ```
+     */
+    toJSON(): SerializedDiffResult;
+}
+/** Wire-safe form of `DiffResult` (no `bigint`, no `Uint8Array`). */
+export interface SerializedDiffResult {
+    version: {
+        major: number;
+        minor: number;
+    };
+    entries: Array<{
+        op: DiffOp;
+        path: string;
+        pathId: string;
+        leftValue?: JsonScalar;
+        rightValue?: JsonScalar;
+    }>;
 }
 /** RFC 6902 JSON Patch operation. */
 export type JsonPatchOp = {

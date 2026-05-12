@@ -1,0 +1,40 @@
+name: Feature Request
+description: Suggest a new capability for diffcore
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the use case in plain words. ("I have X, I want to do Y.")
+      placeholder: |
+        I'm comparing API responses that always have a "fetchedAt" timestamp.
+        Right now every diff has a noisy entry for that field; I'd like to filter it out.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-api
+    attributes:
+      label: Proposed API (if you have one)
+      description: A short sketch of how you'd want to call it.
+      render: ts
+      placeholder: |
+        await diff(a, b, { ignore: ["/fetchedAt"] });
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds you've considered
+      description: What you do today, and why it isn't enough.
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: How blocking is this for you?
+      options:
+        - Nice to have
+        - Would meaningfully improve my use of diffcore
+        - I can't ship without it
+    validations:
+      required: true

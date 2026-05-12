@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question / usage help
+    url: https://github.com/DibbayajyotiRoy/rust-wasm-Library/discussions
+    about: For "how do I…" questions, please use Discussions instead of an issue.
+  - name: Security vulnerability
+    url: https://github.com/DibbayajyotiRoy/rust-wasm-Library/security/advisories/new
+    about: Report security issues privately, not as a public issue.

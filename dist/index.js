@@ -81,6 +81,37 @@ function parseRawEntries(buffer) {
     }
     return { major, minor, raw };
 }
+function pathMatchesFilter(path, filters) {
+    for (const f of filters) {
+        if (path === f)
+            return true;
+        if (path.startsWith(f + "/"))
+            return true;
+    }
+    return false;
+}
+function applyEntryFilters(entries, ignore, scope) {
+    let out = entries;
+    if (scope !== undefined && scope !== "") {
+        out = out.filter((e) => e.path === scope || e.path.startsWith(scope + "/"));
+    }
+    if (ignore && ignore.length > 0) {
+        out = out.filter((e) => !pathMatchesFilter(e.path, ignore));
+    }
+    return out;
+}
+function makeSerializable(entries, major, minor) {
+    return () => ({
+        version: { major, minor },
+        entries: entries.map((e) => ({
+            op: e.op,
+            path: e.path,
+            pathId: e.pathId.toString(16),
+            leftValue: e.leftValue,
+            rightValue: e.rightValue,
+        })),
+    });
+}
 function resolveEntries(raw, leftBytes, rightBytes, resolvePaths) {
     const leftIndex = resolvePaths && leftBytes ? buildPathIndex(leftBytes) : null;
     const rightIndex = resolvePaths && rightBytes ? buildPathIndex(rightBytes) : null;
@@ -143,12 +174,16 @@ export class DiffEngine {
     leftWritten = 0;
     rightWritten = 0;
     resolvePaths;
+    ignore;
+    scope;
     leftBuffer = [];
     rightBuffer = [];
     /** @internal use `createEngine()`. */
     constructor(wasm, config = {}) {
         this.wasm = wasm;
         this.resolvePaths = config.resolvePaths !== false;
+        this.ignore = config.ignore;
+        this.scope = config.scope;
         const configBytes = serializeConfig(config);
         const configPtr = this.allocAndWrite(configBytes);
         this.enginePtr = wasm.create_engine(configPtr, configBytes.length);
@@ -208,8 +243,14 @@ export class DiffEngine {
         const { major, minor, raw } = parseRawEntries(resultCopy);
         const left = this.resolvePaths ? concatChunks(this.leftBuffer) : null;
         const right = this.resolvePaths ? concatChunks(this.rightBuffer) : null;
-        const entries = resolveEntries(raw, left, right, this.resolvePaths);
-        return { version: { major, minor }, entries, raw: resultCopy };
+        let entries = resolveEntries(raw, left, right, this.resolvePaths);
+        entries = applyEntryFilters(entries, this.ignore, this.scope);
+        return {
+            version: { major, minor },
+            entries,
+            raw: resultCopy,
+            toJSON: makeSerializable(entries, major, minor),
+        };
     }
     /** Free WASM memory immediately. Optional — GC handles it otherwise. */
     destroy() {
@@ -335,12 +376,39 @@ export async function diff(left, right, config = {}) {
         if (rightStatus !== Status.Ok)
             throw new InvalidJsonError("right", rightStatus);
         const result = engine.finalize();
-        const { raw } = parseRawEntries(result.raw);
-        const entries = resolveEntries(raw, leftBytes, rightBytes, resolvePaths);
-        return { ...result, entries };
+        const { major, minor, raw } = parseRawEntries(result.raw);
+        let entries = resolveEntries(raw, leftBytes, rightBytes, resolvePaths);
+        entries = applyEntryFilters(entries, config.ignore, config.scope);
+        return {
+            version: result.version,
+            entries,
+            raw: result.raw,
+            toJSON: makeSerializable(entries, major, minor),
+        };
     }
     finally {
         engine.destroy();
     }
+}
+/**
+ * Returns `true` if `a` and `b` are structurally equal (no differences after
+ * applying any `ignore` / `scope` filters).
+ *
+ * Short-circuits on reference equality. For everything else, runs the same
+ * engine pass `diff()` does, then checks `entries.length === 0`.
+ *
+ * @example
+ * ```ts
+ * if (await equals(prev, next)) return;            // nothing changed
+ * if (await equals(a, b, { ignore: ["/timestamp"] })) // ignore noise
+ * ```
+ */
+export async function equals(left, right, config = {}) {
+    if (left === right)
+        return true;
+    if (typeof left === "string" && typeof right === "string" && left === right)
+        return true;
+    const result = await diff(left, right, config);
+    return result.entries.length === 0;
 }
 //# sourceMappingURL=index.js.map

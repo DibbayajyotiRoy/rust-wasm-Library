@@ -49,6 +49,7 @@ No native build step. The WASM is embedded as Base64.
 // Main API
 import {
   diff,
+  equals,                   // v1.2: structural equality shortcut
   createEngine,
   createEngineWithWasm,
   applyPatch,
@@ -61,8 +62,18 @@ import {
   Status,                   // enum
   DiffCoreError, InvalidJsonError, EngineDestroyedError, FinalizationError,
   type DiffEntry, type DiffResult, type DiffCoreConfig,
+  type SerializedDiffResult,
   type JsonScalar, type JsonValue, type JsonPatchOp,
 } from "diffcore";
+
+// State-management primitives (v1.2)
+import {
+  createHistory,              // bounded undo/redo
+  detectConflicts,            // find paths edited by two patches
+  merge3, MergeConflictError, // three-way merge
+  diffWith,                   // diff with custom comparators
+  dateTolerance, numericTolerance, caseInsensitive,
+} from "diffcore/state";
 
 // React hook (subpath; needs `react` installed)
 import { useDiff } from "diffcore/react";
@@ -70,6 +81,20 @@ import { useDiff } from "diffcore/react";
 // Web Worker class (off-main-thread)
 import { DiffCoreWorker } from "diffcore/worker";
 ```
+
+## New in v1.2 — quick reference
+
+| Capability | API |
+|---|---|
+| Structural equality (fast) | `await equals(a, b)` |
+| Ignore noisy fields | `diff(a, b, { ignore: ["/timestamp"] })` |
+| Diff only a subtree | `diff(a, b, { scope: "/users" })` |
+| Send a diff over the wire | `JSON.stringify(result.toJSON())` |
+| Validate a wire payload | `schema/diff-result.schema.json` |
+| Undo/redo stack | `createHistory(state, { maxSize: 100 })` |
+| Find merge conflicts | `detectConflicts(patchA, patchB)` |
+| Three-way merge | `await merge3(base, a, b, { strategy: "throw" })` |
+| Tolerance comparisons | `diffWith(a, b, { "/createdAt": dateTolerance(1000) })` |
 
 ## Canonical recipes (copy these verbatim)
 

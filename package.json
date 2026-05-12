@@ -1,6 +1,6 @@
 {
   "name": "diffcore",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Fast WebAssembly JSON diff engine. Returns real JSON Pointer paths and decoded values. Includes applyPatch, revertPatch, RFC 6902 JSON Patch output, a React hook, and a CLI.",
   "type": "module",
   "main": "./dist/index.js",
@@ -17,6 +17,10 @@
       "import": "./dist/react.js",
       "types": "./dist/react.d.ts"
     },
+    "./state": {
+      "import": "./dist/state.js",
+      "types": "./dist/state.d.ts"
+    },
     "./worker": {
       "import": "./dist/worker.js",
       "types": "./dist/worker.d.ts"
@@ -26,8 +30,12 @@
   },
   "files": [
     "dist",
+    "schema",
     "README.md",
     "AGENTS.md",
+    "CHANGELOG.md",
+    "llms.txt",
+    "llms-full.txt",
     "LICENSE"
   ],
   "scripts": {
@@ -36,7 +44,7 @@
     "build:bundle": "node scripts/embed-wasm.mjs",
     "build": "npm run build:wasm && npm run build:js && npm run build:bundle",
     "prepublishOnly": "npm run build",
-    "test": "node test/edge-cases.mjs && node test/smoke.mjs"
+    "test": "node test/edge-cases.mjs && node test/stress.mjs && node test/smoke.mjs && node test/v1.2-features.mjs && node test/v1.4-state.mjs"
   },
   "repository": {
     "type": "git",

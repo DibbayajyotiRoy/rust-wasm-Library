@@ -25,7 +25,7 @@
  * - **Auto cleanup**: memory is freed via `FinalizationRegistry`.
  */
 import { Status, type DiffCoreConfig, type DiffResult } from "./types.js";
-export { Status, DiffOp, ArrayDiffMode, EDGE_CONFIG, type DiffCoreConfig, type DiffEntry, type DiffResult, type JsonScalar, type JsonValue, type JsonPatchOp, } from "./types.js";
+export { Status, DiffOp, ArrayDiffMode, EDGE_CONFIG, type DiffCoreConfig, type DiffEntry, type DiffResult, type SerializedDiffResult, type JsonScalar, type JsonValue, type JsonPatchOp, } from "./types.js";
 export { applyPatch, revertPatch, toJsonPatch } from "./patch.js";
 export { formatDiff } from "./format.js";
 export { DiffCoreError, InvalidJsonError, EngineDestroyedError, FinalizationError } from "./errors.js";
@@ -65,6 +65,8 @@ export declare class DiffEngine {
     private leftWritten;
     private rightWritten;
     private resolvePaths;
+    private ignore?;
+    private scope?;
     private leftBuffer;
     private rightBuffer;
     /** @internal use `createEngine()`. */
@@ -101,4 +103,18 @@ export declare function createEngineWithWasm(wasmSource: string | URL | ArrayBuf
  * ```
  */
 export declare function diff(left: Uint8Array | string, right: Uint8Array | string, config?: DiffCoreConfig): Promise<DiffResult>;
+/**
+ * Returns `true` if `a` and `b` are structurally equal (no differences after
+ * applying any `ignore` / `scope` filters).
+ *
+ * Short-circuits on reference equality. For everything else, runs the same
+ * engine pass `diff()` does, then checks `entries.length === 0`.
+ *
+ * @example
+ * ```ts
+ * if (await equals(prev, next)) return;            // nothing changed
+ * if (await equals(a, b, { ignore: ["/timestamp"] })) // ignore noise
+ * ```
+ */
+export declare function equals(left: Uint8Array | string, right: Uint8Array | string, config?: DiffCoreConfig): Promise<boolean>;
 //# sourceMappingURL=index.d.ts.map
