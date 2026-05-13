@@ -53,5 +53,11 @@ jobs:
       - name: Run v1.4 state-management tests (createHistory, merge3, conflicts, comparators)
         run: node test/v1.4-state.mjs
 
+      - name: Run UX scenario tests (real developer journeys)
+        run: npm run test:ux
+
+      - name: Run unit tests (errors, formatDiff, path-index, config)
+        run: npm run test:unit
+
       - name: Verify Package
         run: npm pack --dry-run

@@ -29,6 +29,25 @@ That's it. No build step. No config. No toolchain. The WASM is embedded as Base6
 
 ---
 
+## When to reach for diffcore
+
+Build any of the following and diffcore is probably the shortest path there:
+
+- **JSON state sync between client and server** — diff on the client, send the patch, apply on the server. Round-trip exact.
+- **Undo / redo in a rich editor** — a patch-based history stack that stays bounded as users edit.
+- **Optimistic UI updates with rollback** — apply locally, revert cleanly if the server rejects.
+- **Collaborative editing with three-way merge** — Git-style merge between two users' edits, with typed conflict reporting.
+- **Audit log of JSON state changes** — store the diff at every checkpoint; replay reconstructs every prior state exactly.
+- **API response cache invalidation with tolerance** — "did anything *real* change?" given drifting timestamps and floats.
+- **Forms that only submit what the user actually changed** — diff the original vs the edited form, send only the delta.
+- **Watching config files and logging only meaningful changes** — ignore the `lastModifiedAt` noise, log the actual flips.
+- **Fast structural deep equality** — `equals(a, b)` with optional `ignore` filters.
+- **Standard RFC 6902 JSON Patch output** for any IETF-compliant consumer.
+
+Looking for a **`jsondiffpatch` alternative** with RFC 6902 output? Looking for **`fast-json-patch` with a built-in undo stack**? Looking for **`microdiff` with `applyPatch` and `revertPatch` helpers**? Looking for **`deep-diff` with structured JSON Pointer paths** instead of custom kind notation? That's diffcore.
+
+---
+
 ## Why diffcore
 
 - **Real JSON Pointer paths** (`/users/0/role`) per RFC 6901 — not the opaque hashes most low-level engines emit.
@@ -403,32 +422,98 @@ const engine = await createEngine(EDGE_CONFIG);
 
 ## FAQ
 
-**Is `diffcore` an alternative to `jsondiffpatch` or `fast-json-patch`?**
-Yes — and complementary. `diffcore` produces the diff (faster and via WASM); its output is interoperable with both libraries via `toJsonPatch()`. Use `fast-json-patch.applyPatch` against the output if you already have that wired up.
+**How do I compare two JSON files / objects / strings in Node.js?**
+`await diff(left, right)`. Inputs can be strings, `Uint8Array`s, or already-parsed objects (just `JSON.stringify` first). The function is async because it lazily loads the embedded WASM the first time it's called.
+
+**How do I get a JSON Patch (RFC 6902) from a diff?**
+`toJsonPatch(await diff(a, b))` returns an array of `{ op, path, value }` ops directly usable by any RFC 6902 consumer (`fast-json-patch`, server-side JSON Patch endpoints, IETF SDKs).
+
+**How do I apply a JSON Patch to an object?**
+`applyPatch(target, patch)` clones the target and applies the diff. Use `{ lenient: true }` to skip unreachable paths instead of throwing.
+
+**How do I implement undo / redo for JSON state?**
+`import { createHistory } from "diffcore/state"`. Stores diffs (not snapshots), so memory stays bounded even with hundreds of edits.
+
+**How do I do a three-way merge of two branches of a JSON document?**
+`import { merge3 } from "diffcore/state"` — pass `base`, `branchA`, `branchB`, and a `strategy` (`"throw"`, `"prefer-a"`, or `"prefer-b"`). Returns the merged value and a list of any conflicts.
+
+**How do I detect conflicts between two patches without merging?**
+`import { detectConflicts } from "diffcore/state"`. Returns every path edited by both patches, with the two attempted values and a `sameOutcome` flag.
+
+**How do I diff while ignoring noisy fields like `/timestamp` or `/_id`?**
+`await diff(a, b, { ignore: ["/timestamp", "/_id"] })` — drops entries whose path matches or starts with one of these JSON Pointers.
+
+**How do I diff only a subtree of a JSON document?**
+`await diff(a, b, { scope: "/users" })` — returns only the entries under `/users`.
+
+**How do I check if two JSON values are structurally equal?**
+`await equals(a, b)`. Short-circuits on reference equality. Combine with `ignore` to treat noise-only diffs as equal.
+
+**How do I treat two timestamps as equal if they're within N milliseconds?**
+`diffWith(a, b, { "/createdAt": dateTolerance(1000) })` from `diffcore/state`. Same pattern for `numericTolerance(epsilon)` and `caseInsensitive()`.
+
+**How do I send a diff over the wire / HTTP / WebSocket?**
+`JSON.stringify(result.toJSON())`. The `toJSON()` form strips `bigint` `pathId`s (becomes hex string) and per-entry `Uint8Array`s, so the payload is plain JSON.
+
+**Is `diffcore` an alternative to `jsondiffpatch`?**
+Yes — and complementary. diffcore is faster (WASM) and emits standard JSON Pointer paths. Its `toJsonPatch()` output works with any RFC 6902 consumer.
+
+**Is `diffcore` an alternative to `fast-json-patch`?**
+Yes for diff generation (which `fast-json-patch` doesn't do well). Combine them: diffcore generates, `fast-json-patch` applies. Or use diffcore for both — `applyPatch` is built-in.
+
+**Is `diffcore` an alternative to `microdiff`?**
+Yes if you want apply/revert helpers, RFC 6902 output, or undo/redo. microdiff is smaller (~5 KB vs ~48 KB) but is just a diff function — no apply, no patch standard, no React hook.
+
+**Is `diffcore` an alternative to `deep-diff`?**
+Yes — and gives you structured JSON Pointer paths instead of `deep-diff`'s custom `kind` notation, plus standard RFC 6902 output.
 
 **Why are paths formatted as `/users/0/role` instead of `users[0].role`?**
-That's RFC 6901 JSON Pointer — the same format `fast-json-patch` and every IETF JSON Patch endpoint uses. It composes cleanly and is unambiguous for keys containing `.` or `[`.
+That's RFC 6901 JSON Pointer — the format `fast-json-patch` and every IETF JSON Patch endpoint uses. It composes cleanly and is unambiguous for keys containing `.` or `[`. Special characters are escaped: `/` becomes `~1`, `~` becomes `~0`.
 
 **Does it work in the browser without a build step?**
-Yes. The WASM is embedded as Base64. Any bundler (Vite, Webpack, esbuild, Rollup, Parcel) just sees a regular ES module.
+Yes. The WASM is embedded as Base64. Any bundler (Vite, Webpack, esbuild, Rollup, Parcel) imports it as a regular ES module.
 
-**Does it work on Cloudflare Workers / Vercel Edge / Deno?**
-Yes — pass `EDGE_CONFIG` for a smaller memory footprint.
+**Does it work in Bun / Deno?**
+Yes. Both support WebAssembly and modern ES modules. No special config needed.
+
+**Does it work on Cloudflare Workers / Vercel Edge?**
+Yes — pass `EDGE_CONFIG` for a smaller memory footprint. The WASM size (38 KB) is well under the typical edge worker limit.
+
+**Does it work with React?**
+Yes — `import { useDiff } from "diffcore/react"`. React is an optional peer dependency.
+
+**Does it work with Vue / Svelte / Solid?**
+Not yet with a dedicated hook, but the core API works in all of them. A Vue / Svelte / Solid adapter is on the roadmap.
+
+**Does it work with TypeScript?**
+Yes — TypeScript types ship with the package. No `@types/diffcore` needed.
+
+**Can I use it without WebAssembly support?**
+No — WASM is the speed source. If you need a pure-JS fallback, use `jsondiffpatch` or `microdiff`.
+
+**What happens with malformed JSON?**
+`diff()` validates inputs with `JSON.parse` and throws `InvalidJsonError` with the offending side (`"left"` / `"right"`), the engine status code, and a remediation hint. Use `createEngine()` directly to skip validation.
 
 **Is `diff()` deterministic?**
 Yes for the same inputs and config.
 
-**What happens with malformed JSON?**
-The high-level `diff()` validates with `JSON.parse` first and throws `InvalidJsonError` with the offending side and parser message. Use `createEngine()` directly if you want to skip validation (e.g. you're piping pre-validated bytes).
+**Does it handle Unicode in keys and values?**
+Yes — keys and values are treated as UTF-8 throughout. JSON escapes (`\n`, `é`, etc.) round-trip correctly.
 
 **How big is the bundle?**
-~38 KB of WASM + ~10 KB of JS minified.
+~38 KB of WASM + ~10 KB of JS, both minified. The state primitives (`diffcore/state`) and React hook (`diffcore/react`) are tree-shakeable subpath exports.
 
-**Can I use it without WebAssembly support?**
-No — that's the speed source. If you need a pure-JS fallback, use `jsondiffpatch` or `microdiff`.
+**How fast is it really?**
+~55 ms for a 10 MB JSON diff (parse + diff in a single pass). 3–4× faster than handwritten JS. See [Performance](#performance) for the full benchmark grid.
 
 **Does it stream true zero-copy across chunks?**
-Yes — `pushLeft` / `pushRight` write directly into a WASM-managed buffer via DMA.
+Yes — `pushLeft` / `pushRight` write directly into a WASM-managed buffer via DMA. No `_malloc` per chunk.
+
+**How do I get a colored diff in the terminal?**
+`npx diffcore before.json after.json`. Or programmatically: `formatDiff(result, { color: true })`.
+
+**How do I diff JSON in CI and fail the build if they differ?**
+`npx diffcore before.json after.json --silent` — exits `0` if identical, `1` if different, `2` on error.
 
 ---
 

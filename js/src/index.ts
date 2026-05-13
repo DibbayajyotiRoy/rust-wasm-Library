@@ -181,9 +181,15 @@ function resolveEntries(
     const rightIndex = resolvePaths && rightBytes ? buildPathIndex(rightBytes) : null;
 
     return raw.map((e) => {
+        // Engine guarantee: Modified means both sides have a leaf at this path
+        // (offset/len are valid even when len === 0, e.g. empty strings).
+        // Added: only right has a leaf. Removed: only left has a leaf.
+        const leftPresent  = e.op === DiffOp.Modified || e.op === DiffOp.Removed;
+        const rightPresent = e.op === DiffOp.Modified || e.op === DiffOp.Added;
+
         let info: LeafInfo | undefined;
-        if (e.leftLen > 0 && leftIndex) info = leftIndex.byPathId.get(e.pathId);
-        if (!info && rightIndex) info = rightIndex.byPathId.get(e.pathId);
+        if (leftPresent && leftIndex) info = leftIndex.byPathId.get(e.pathId);
+        if (!info && rightPresent && rightIndex) info = rightIndex.byPathId.get(e.pathId);
 
         const path = info
             ? info.pointer
@@ -194,12 +200,12 @@ function resolveEntries(
         let leftSlice: Uint8Array | undefined;
         let rightSlice: Uint8Array | undefined;
 
-        if (e.leftLen > 0 && leftBytes) {
+        if (leftPresent && leftBytes) {
             leftSlice = leftBytes.subarray(e.leftOffset, e.leftOffset + e.leftLen);
             if (info) leftValue = decodeLeafValue(leftBytes, { ...info, valueOffset: e.leftOffset, valueLen: e.leftLen });
             else leftValue = new TextDecoder().decode(leftSlice);
         }
-        if (e.rightLen > 0 && rightBytes) {
+        if (rightPresent && rightBytes) {
             rightSlice = rightBytes.subarray(e.rightOffset, e.rightOffset + e.rightLen);
             if (info) rightValue = decodeLeafValue(rightBytes, { ...info, valueOffset: e.rightOffset, valueLen: e.rightLen });
             else rightValue = new TextDecoder().decode(rightSlice);

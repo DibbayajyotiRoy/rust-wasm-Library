@@ -4,6 +4,17 @@ All notable changes to `diffcore` are documented here. Format loosely follows [K
 
 ## [Unreleased]
 
+### Added
+
+- **UX scenario test layer** under `test/ux/` — 10 files / 35 tests that simulate real developer journeys end-to-end: state sync, optimistic UI rollback, form-delta submission, config watching with noise filters, collaborative 3-way merge, audit-log replay, API-response caching with tolerance, editor undo/redo, CLI exit codes for CI pipelines, wire-protocol round-trip. Uses `node:test`.
+- **Unit test layer** under `test/unit/` — 4 files / 30 tests covering typed errors, `formatDiff` output shape, `buildPathIndex` correctness in isolation, and config-default behavior.
+- `npm run test:ux`, `npm run test:unit`, `npm run test:legacy` — granular test scripts. `npm test` runs all three.
+- CI now runs the UX + unit suites alongside the legacy correctness suite.
+
+### Fixed
+
+- `diff()` returned `leftValue: undefined` for Modified entries whose left value was an empty string `""` (engine reports `leftLen=0`, which the old gate treated as "no value"). `revertPatch` would then write `null` instead of `""`, breaking round-trip integrity for any document containing empty strings. The resolver now keys on `op` (Modified means both sides have a leaf, even if `len === 0`) rather than `len > 0`. Caught by the `test/ux/08-editor-undo-redo.test.mjs` scenario.
+
 ### Planned
 
 - Model Context Protocol server (`diffcore-mcp`) so Claude / GPT / Cursor can call `diffcore` directly

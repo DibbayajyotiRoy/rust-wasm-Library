@@ -42,12 +42,27 @@ npm test           # runs test/edge-cases.mjs + test/stress.mjs + test/smoke.mjs
 ### Code organization
 
 - `src/` — Rust engine (compiled to `wasm32-unknown-unknown`)
-- `js/src/` — TypeScript wrapper, React hook, CLI, formatters
+- `js/src/` — TypeScript wrapper, React hook, CLI, formatters, state primitives
 - `dist/` — build output (do not edit by hand)
-- `test/` — Node test suite
+- `test/` — Node test suite (three layers, see below)
 - `examples/` — runnable usage examples
+- `schema/` — JSON Schema for the wire-safe `DiffResult`
 - `docs_ui/` — landing page (Next.js)
 - `bench/` — performance benchmark
+
+### Test layout
+
+Three layers, each with a clear purpose. **All three run in CI on every PR**.
+
+| Path | Purpose | Run with |
+|---|---|---|
+| `test/edge-cases.mjs`, `test/stress.mjs`, `test/smoke.mjs`, `test/v1.2-features.mjs`, `test/v1.4-state.mjs` | **Legacy correctness suite.** 68 cases covering engine correctness, edge inputs, pathological JSON, and feature regressions. Custom-format (pass/fail counter). | `npm run test:legacy` |
+| `test/unit/*.test.mjs` | **Unit tests.** Focused tests for individual modules: typed errors, `formatDiff`, `path-index`, config defaults. Uses `node:test`. | `npm run test:unit` |
+| `test/ux/*.test.mjs` | **UX scenario tests.** Simulate real developer journeys end-to-end: state sync, optimistic UI, form-delta submission, config watching, collaborative merge, audit logs, API caching, undo/redo, CLI exit codes, wire-protocol round-trip. Each test reads like a story — if these break, real users are getting worse outcomes. Uses `node:test`. | `npm run test:ux` |
+
+Run everything: `npm test`.
+
+When adding a feature, write the **UX test first** — that's where you describe the user problem the feature solves. Then add unit tests for any new helpers. Legacy suites are append-only; don't delete cases.
 
 ### What we look for in a PR
 
