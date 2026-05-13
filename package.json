@@ -46,8 +46,8 @@
     "prepublishOnly": "npm run build",
     "test": "npm run test:legacy && npm run test:ux && npm run test:unit",
     "test:legacy": "node test/edge-cases.mjs && node test/stress.mjs && node test/smoke.mjs && node test/v1.2-features.mjs && node test/v1.4-state.mjs",
-    "test:ux": "node --test test/ux/",
-    "test:unit": "node --test test/unit/"
+    "test:ux": "node --test \"test/ux/*.test.mjs\"",
+    "test:unit": "node --test \"test/unit/*.test.mjs\""
   },
   "repository": {
     "type": "git",
