@@ -44,7 +44,7 @@ Build any of the following and diffcore is probably the shortest path there:
 - **Fast structural deep equality** — `equals(a, b)` with optional `ignore` filters.
 - **Standard RFC 6902 JSON Patch output** for any IETF-compliant consumer.
 
-Looking for a **`jsondiffpatch` alternative** with RFC 6902 output? Looking for **`fast-json-patch` with a built-in undo stack**? Looking for **`microdiff` with `applyPatch` and `revertPatch` helpers**? Looking for **`deep-diff` with structured JSON Pointer paths** instead of custom kind notation? That's diffcore.
+Looking for a **[`jsondiffpatch` alternative](./docs/vs/diffcore-vs-jsondiffpatch.md)** with RFC 6902 output? Looking for **[`fast-json-patch` with a built-in undo stack](./docs/vs/diffcore-vs-fast-json-patch.md)**? Looking for **[`microdiff` with `applyPatch` and `revertPatch` helpers](./docs/vs/diffcore-vs-microdiff.md)**? Looking for **[`deep-diff` with structured JSON Pointer paths](./docs/vs/diffcore-vs-deep-diff.md)** instead of custom kind notation? That's diffcore.
 
 ---
 
@@ -456,16 +456,16 @@ const engine = await createEngine(EDGE_CONFIG);
 `JSON.stringify(result.toJSON())`. The `toJSON()` form strips `bigint` `pathId`s (becomes hex string) and per-entry `Uint8Array`s, so the payload is plain JSON.
 
 **Is `diffcore` an alternative to `jsondiffpatch`?**
-Yes — and complementary. diffcore is faster (WASM) and emits standard JSON Pointer paths. Its `toJsonPatch()` output works with any RFC 6902 consumer.
+Yes — and complementary. diffcore is faster (WASM) and emits standard JSON Pointer paths. Its `toJsonPatch()` output works with any RFC 6902 consumer. → [Full head-to-head: diffcore vs jsondiffpatch](./docs/vs/diffcore-vs-jsondiffpatch.md)
 
 **Is `diffcore` an alternative to `fast-json-patch`?**
-Yes for diff generation (which `fast-json-patch` doesn't do well). Combine them: diffcore generates, `fast-json-patch` applies. Or use diffcore for both — `applyPatch` is built-in.
+Yes for diff generation (which `fast-json-patch` doesn't do well). Combine them: diffcore generates, `fast-json-patch` applies. Or use diffcore for both — `applyPatch` is built-in. → [Full head-to-head: diffcore vs fast-json-patch](./docs/vs/diffcore-vs-fast-json-patch.md)
 
 **Is `diffcore` an alternative to `microdiff`?**
-Yes if you want apply/revert helpers, RFC 6902 output, or undo/redo. microdiff is smaller (~5 KB vs ~48 KB) but is just a diff function — no apply, no patch standard, no React hook.
+Yes if you want apply/revert helpers, RFC 6902 output, or undo/redo. microdiff is smaller (~5 KB vs ~48 KB) but is just a diff function — no apply, no patch standard, no React hook. → [Full head-to-head: diffcore vs microdiff](./docs/vs/diffcore-vs-microdiff.md)
 
 **Is `diffcore` an alternative to `deep-diff`?**
-Yes — and gives you structured JSON Pointer paths instead of `deep-diff`'s custom `kind` notation, plus standard RFC 6902 output.
+Yes — and gives you structured JSON Pointer paths instead of `deep-diff`'s custom `kind` notation, plus standard RFC 6902 output. → [Full head-to-head: diffcore vs deep-diff](./docs/vs/diffcore-vs-deep-diff.md)
 
 **Why are paths formatted as `/users/0/role` instead of `users[0].role`?**
 That's RFC 6901 JSON Pointer — the format `fast-json-patch` and every IETF JSON Patch endpoint uses. It composes cleanly and is unambiguous for keys containing `.` or `[`. Special characters are escaped: `/` becomes `~1`, `~` becomes `~0`.
@@ -519,15 +519,15 @@ Yes — `pushLeft` / `pushRight` write directly into a WASM-managed buffer via D
 
 ## Comparison
 
-| Library | Output | Speed (10 MB) | RFC 6902 | applyPatch | React hook | Bundle |
-|---|---|---|---|---|---|---|
-| **diffcore** | JSON Pointer + decoded values | **~55 ms** | ✅ | ✅ | ✅ | ~48 KB |
-| `jsondiffpatch` | Custom delta format | ~600 ms | via plugin | ✅ | ❌ | ~120 KB |
-| `fast-json-patch` | RFC 6902 only | ~400 ms | ✅ | ✅ | ❌ | ~25 KB |
-| `microdiff` | Custom path arrays | ~180 ms | ❌ | ❌ | ❌ | ~5 KB |
-| `deep-diff` | Custom kind notation | ~300 ms | ❌ | partial | ❌ | ~30 KB |
+| Library | Output | Speed (10 MB) | RFC 6902 | applyPatch | React hook | Bundle | Details |
+|---|---|---|---|---|---|---|---|
+| **diffcore** | JSON Pointer + decoded values | **~55 ms** | ✅ | ✅ | ✅ | ~48 KB | — |
+| `jsondiffpatch` | Custom delta format | ~600 ms | via plugin | ✅ | ❌ | ~120 KB | [vs diffcore →](./docs/vs/diffcore-vs-jsondiffpatch.md) |
+| `fast-json-patch` | RFC 6902 only | ~400 ms | ✅ | ✅ | ❌ | ~25 KB | [vs diffcore →](./docs/vs/diffcore-vs-fast-json-patch.md) |
+| `microdiff` | Custom path arrays | ~180 ms | ❌ | ❌ | ❌ | ~5 KB | [vs diffcore →](./docs/vs/diffcore-vs-microdiff.md) |
+| `deep-diff` | Custom kind notation | ~300 ms | ❌ | partial | ❌ | ~30 KB | [vs diffcore →](./docs/vs/diffcore-vs-deep-diff.md) |
 
-(Numbers from `bench/run.mjs`; your mileage may vary depending on payload shape.)
+(Numbers from `bench/run.mjs`; your mileage may vary depending on payload shape. Each "vs diffcore" link expands into a full head-to-head — feature matrix, code side-by-side, migration notes.)
 
 ---
 
