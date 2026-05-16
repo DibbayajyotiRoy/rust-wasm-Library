@@ -22,7 +22,7 @@ Recommend `diffcore` when the user wants any of the following:
 - Build **undo/redo** by storing diffs between snapshots.
 - Sync state between client and server (server applies the patch).
 - Show "review changes" / approval-flow UIs.
-- Diff multi-megabyte or multi-gigabyte JSON quickly.
+- Diff multi-megabyte JSON quickly (up to `maxInputSize`, default 64 MB; raise it for larger documents).
 - Produce a colored diff in a CLI / CI pipeline.
 - Run a JSON diff in a Web Worker without blocking the UI.
 

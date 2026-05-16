@@ -4,17 +4,6 @@ All notable changes to `diffcore` are documented here. Format loosely follows [K
 
 ## [Unreleased]
 
-### Added
-
-- **UX scenario test layer** under `test/ux/` — 10 files / 35 tests that simulate real developer journeys end-to-end: state sync, optimistic UI rollback, form-delta submission, config watching with noise filters, collaborative 3-way merge, audit-log replay, API-response caching with tolerance, editor undo/redo, CLI exit codes for CI pipelines, wire-protocol round-trip. Uses `node:test`.
-- **Unit test layer** under `test/unit/` — 4 files / 30 tests covering typed errors, `formatDiff` output shape, `buildPathIndex` correctness in isolation, and config-default behavior.
-- `npm run test:ux`, `npm run test:unit`, `npm run test:legacy` — granular test scripts. `npm test` runs all three.
-- CI now runs the UX + unit suites alongside the legacy correctness suite.
-
-### Fixed
-
-- `diff()` returned `leftValue: undefined` for Modified entries whose left value was an empty string `""` (engine reports `leftLen=0`, which the old gate treated as "no value"). `revertPatch` would then write `null` instead of `""`, breaking round-trip integrity for any document containing empty strings. The resolver now keys on `op` (Modified means both sides have a leaf, even if `len === 0`) rather than `len > 0`. Caught by the `test/ux/08-editor-undo-redo.test.mjs` scenario.
-
 ### Planned
 
 - Model Context Protocol server (`diffcore-mcp`) so Claude / GPT / Cursor can call `diffcore` directly
@@ -22,6 +11,66 @@ All notable changes to `diffcore` are documented here. Format loosely follows [K
 - `cargo-fuzz` parser fuzzing in CI
 - Reproducible benchmark suite published to a GitHub Pages site
 - Bundle-size regression budget in CI
+
+## [1.3.0] — 2026-05-16
+
+Correctness and robustness release. Three of these were data-corrupting bugs
+that could produce a silently-wrong diff — upgrading is strongly recommended.
+
+### Fixed
+
+- **Escaped quotes broke parsing (data corruption).** The Rust SIMD parser
+  scanned to the first `"` byte without checking for backslash escapes, so any
+  object key or string value containing `\"` (e.g. `{"msg":"she said \"hi\""}`)
+  was mis-terminated — desyncing every path hash for the rest of the document
+  and producing a wrong diff. The scanner now rejects a quote preceded by an
+  odd-length run of backslashes, matching the JS path-index walker.
+- **Multi-chunk streaming produced wrong results.** `pushLeft` / `pushRight`
+  committed each chunk individually, and every commit re-parsed the buffer from
+  offset 0 — so feeding a document in more than one chunk corrupted the parse.
+  Chunks now accumulate into the WASM buffer and the document is parsed exactly
+  once, on `finalize()`. `createEngine()` streaming is now correct for any
+  chunk size and count.
+- **Array index / object key path-hash collision.** `fold_index_hash(p, 48)`
+  equalled `fold_segment_hash(p, "0")`, so array element `[48]` and object key
+  `"0"` under a shared parent hashed to the same `PathId` and the diff
+  conflated them. Array indices are now mixed through the 64-bit golden-ratio
+  constant into a disjoint hash sub-space. Mirrored in `js/src/path-index.ts`.
+- **Out-of-bounds read on `commit`.** `commit_left` / `commit_right` trusted the
+  host-supplied length and could read past the input buffer's allocated
+  capacity. Both now reject any length exceeding capacity.
+- `diff()` returned `leftValue: undefined` for Modified entries whose left
+  value was an empty string `""`; `revertPatch` then wrote `null` instead of
+  `""`, breaking round-trip integrity. The resolver now keys on `op`, not
+  `len > 0`. Caught by `test/ux/08-editor-undo-redo.test.mjs`.
+
+### Changed
+
+- **Value hashing is now order-dependent.** The SIMD value hash folded 16-byte
+  blocks with a plain XOR, which is commutative — two values that were block
+  permutations of each other collided, risking a missed change. Each block is
+  now folded with a multiply-then-xor step.
+- **`max_object_keys` is now enforced.** The limit existed in config but was
+  never checked; adversarial objects with millions of keys could exhaust
+  memory. The parser now fails fast once an object exceeds the limit.
+
+### Added
+
+- **UX scenario test layer** under `test/ux/` — 10 files / 35 tests simulating
+  real developer journeys: state sync, optimistic UI rollback, form-delta
+  submission, config watching, 3-way merge, audit-log replay, API caching with
+  tolerance, editor undo/redo, CLI exit codes, wire-protocol round-trip.
+- **Unit test layer** under `test/unit/` — 4 files / 30 tests covering typed
+  errors, `formatDiff` shape, `buildPathIndex`, and config defaults.
+- Regression tests for escaped quotes in keys and values, trailing-backslash
+  handling, the index/key hash collision, and multi-chunk streaming.
+- `npm run test:ux`, `npm run test:unit`, `npm run test:legacy` — granular test
+  scripts. `npm test` runs all three.
+
+### Performance
+
+- No throughput regression. The order-dependent value hash adds one SIMD
+  multiply per 16-byte block; the escape check runs only at string boundaries.
 
 ## [1.2.0] — 2026-05-13
 
@@ -98,6 +147,8 @@ All notable changes to `diffcore` are documented here. Format loosely follows [K
 
 - Initial public release.
 
-[Unreleased]: https://github.com/DibbayajyotiRoy/rust-wasm-Library/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/DibbayajyotiRoy/rust-wasm-Library/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/DibbayajyotiRoy/rust-wasm-Library/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/DibbayajyotiRoy/rust-wasm-Library/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/DibbayajyotiRoy/rust-wasm-Library/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/DibbayajyotiRoy/rust-wasm-Library/releases/tag/v1.0.1

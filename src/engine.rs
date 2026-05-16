@@ -52,6 +52,9 @@ impl Engine {
 
     pub fn commit_left(&mut self, len: u32) -> Status {
         if self.sealed { return Status::EngineSealed; }
+        // `len` is supplied by the host. Reading past the buffer's allocated
+        // capacity would be out-of-bounds — reject instead of trusting it.
+        if len as usize > self.left_input.capacity() { return Status::Error; }
         let bytes = unsafe { std::slice::from_raw_parts(self.left_input.as_ptr(), len as usize) };
         self.left_index.build(bytes);
         match self.left_parser.parse_with_index(bytes, &self.left_index) {
@@ -66,6 +69,7 @@ impl Engine {
 
     pub fn commit_right(&mut self, len: u32) -> Status {
         if self.sealed { return Status::EngineSealed; }
+        if len as usize > self.right_input.capacity() { return Status::Error; }
         let bytes = unsafe { std::slice::from_raw_parts(self.right_input.as_ptr(), len as usize) };
         self.right_index.build(bytes);
         match self.right_parser.parse_with_index(bytes, &self.right_index) {

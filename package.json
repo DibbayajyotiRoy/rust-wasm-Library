@@ -1,6 +1,6 @@
 {
   "name": "diffcore",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Fast WebAssembly JSON diff engine. Returns real JSON Pointer paths and decoded values. Includes applyPatch, revertPatch, RFC 6902 JSON Patch output, a React hook, and a CLI.",
   "type": "module",
   "main": "./dist/index.js",

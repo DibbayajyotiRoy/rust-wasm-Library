@@ -10,6 +10,9 @@
 
 const FNV_PRIME = 0x100000001b3n;
 const U64_MASK = 0xffffffffffffffffn;
+/** 64-bit golden-ratio constant — keeps array indices and object keys in
+ *  disjoint hash sub-spaces. Mirrors `fold_index_hash` in `src/path.rs`. */
+const GOLDEN = 0x9e3779b97f4a7c15n;
 
 /** Fold a UTF-8 segment (object key) into the parent hash. */
 export function foldSegment(parent: bigint, bytes: Uint8Array): bigint {
@@ -21,11 +24,17 @@ export function foldSegment(parent: bigint, bytes: Uint8Array): bigint {
     return h;
 }
 
-/** Fold an array index into the parent hash. */
+/**
+ * Fold an array index into the parent hash.
+ *
+ * MUST stay byte-for-byte identical to `fold_index_hash` in `src/path.rs`:
+ * the index is offset by 1 and multiplied by the golden-ratio constant so
+ * that array element `[48]` no longer collides with object key `"0"`.
+ */
 export function foldIndex(parent: bigint, index: number): bigint {
     let h = (parent * FNV_PRIME) & U64_MASK;
-    h ^= BigInt(index);
-    return h;
+    h ^= ((BigInt(index) + 1n) * GOLDEN) & U64_MASK;
+    return h & U64_MASK;
 }
 
 /** Reverse `pathIdLow + pathIdHigh << 32` into a BigInt. */

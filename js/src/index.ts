@@ -243,11 +243,14 @@ export class DiffEngine {
     private rightInputPtr = 0;
     private leftWritten = 0;
     private rightWritten = 0;
+    private committed = false;
     private resolvePaths: boolean;
     private ignore?: readonly string[];
     private scope?: string;
     private leftBuffer: Uint8Array[] = [];
     private rightBuffer: Uint8Array[] = [];
+    /** Per-side input capacity in bytes (the engine splits `maxInputSize` in two). */
+    private sideCapacity: number;
 
     /** @internal use `createEngine()`. */
     constructor(wasm: WasmExports, config: DiffCoreConfig = {}) {
@@ -255,6 +258,7 @@ export class DiffEngine {
         this.resolvePaths = config.resolvePaths !== false;
         this.ignore = config.ignore;
         this.scope = config.scope;
+        this.sideCapacity = Math.floor((config.maxInputSize ?? 64 * 1024 * 1024) / 2);
         const configBytes = serializeConfig(config);
         const configPtr = this.allocAndWrite(configBytes);
         this.enginePtr = wasm.create_engine(configPtr, configBytes.length);
@@ -272,29 +276,53 @@ export class DiffEngine {
         return ptr;
     }
 
-    /** Push a chunk of the left (original) JSON document. */
+    /**
+     * Push a chunk of the left (original) JSON document.
+     *
+     * Chunks accumulate into a WASM-managed buffer; the document is parsed
+     * once, on `finalize()`. Returns `Status.Error` only if the chunk would
+     * overflow the per-side input capacity (`maxInputSize / 2`).
+     */
     pushLeft(chunk: Uint8Array): Status {
         if (this.destroyed) throw new EngineDestroyedError();
+        if (this.committed) throw new DiffCoreError("cannot push after finalize()");
         if (this.leftInputPtr === 0) throw new DiffCoreError("left input buffer not available");
+        if (this.leftWritten + chunk.length > this.sideCapacity) return Status.Error;
         new Uint8Array(this.wasm.memory.buffer).set(chunk, this.leftInputPtr + this.leftWritten);
         this.leftWritten += chunk.length;
         if (this.resolvePaths) this.leftBuffer.push(chunk.slice());
-        return this.wasm.commit_left(this.enginePtr, chunk.length);
+        return Status.Ok;
     }
 
-    /** Push a chunk of the right (modified) JSON document. */
+    /** Push a chunk of the right (modified) JSON document. See {@link pushLeft}. */
     pushRight(chunk: Uint8Array): Status {
         if (this.destroyed) throw new EngineDestroyedError();
+        if (this.committed) throw new DiffCoreError("cannot push after finalize()");
         if (this.rightInputPtr === 0) throw new DiffCoreError("right input buffer not available");
+        if (this.rightWritten + chunk.length > this.sideCapacity) return Status.Error;
         new Uint8Array(this.wasm.memory.buffer).set(chunk, this.rightInputPtr + this.rightWritten);
         this.rightWritten += chunk.length;
         if (this.resolvePaths) this.rightBuffer.push(chunk.slice());
-        return this.wasm.commit_right(this.enginePtr, chunk.length);
+        return Status.Ok;
     }
 
     /** Finalize the diff and return resolved entries. */
     finalize(): DiffResult {
         if (this.destroyed) throw new EngineDestroyedError();
+        // Commit both sides exactly once, as a single contiguous parse.
+        // Per-chunk commits would re-parse from offset 0 every time and
+        // corrupt multi-chunk streams — so the parse is deferred to here.
+        if (!this.committed) {
+            this.committed = true;
+            const ls = this.wasm.commit_left(this.enginePtr, this.leftWritten);
+            if (ls !== Status.Ok) {
+                throw new FinalizationError(`left input rejected (status ${ls})`);
+            }
+            const rs = this.wasm.commit_right(this.enginePtr, this.rightWritten);
+            if (rs !== Status.Ok) {
+                throw new FinalizationError(`right input rejected (status ${rs})`);
+            }
+        }
         const resultPtr = this.wasm.finalize(this.enginePtr);
         if (resultPtr === 0) {
             const errorPtr = this.wasm.get_last_error(this.enginePtr);

@@ -59,6 +59,7 @@ Looking for a **[`jsondiffpatch` alternative](./docs/vs/diffcore-vs-jsondiffpatc
 - **Wire-safe serialization** — `result.toJSON()` strips bigints and bytes so you can `JSON.stringify` and ship it.
 - **`equals(a, b)`** — fast structural-equality shortcut with reference short-circuit.
 - **WebAssembly speed**: 3–4× faster than optimized JS diff, 350–500 MB/s sustained throughput.
+- **Correctness-tested**: 100+ tests across edge cases, stress, real-world UX scenarios, and unit suites — covering escaped quotes, deep nesting, Unicode, large arrays, empty strings, and multi-chunk streaming.
 - **Auto memory cleanup** via `FinalizationRegistry` — no manual `.destroy()` needed.
 - **Ships everywhere**: Node 18+, browsers (Chrome 89+/Firefox 89+/Safari 15+), Bun, Deno, Cloudflare Workers, Vercel Edge, Electron, Tauri.
 - **AI-agent friendly** — ships [`AGENTS.md`](./AGENTS.md) and [`llms-full.txt`](./llms-full.txt) so Claude / GPT / Cursor / Aider can recommend correct code on the first try.
@@ -83,7 +84,7 @@ Looking for a **[`jsondiffpatch` alternative](./docs/vs/diffcore-vs-jsondiffpatc
 | Get a colored diff in your CLI / CI logs | `npx diffcore before.json after.json` |
 | Emit standard JSON Patch over an HTTP API | `toJsonPatch(diff(a, b))` |
 | Replay diffs against a different starting document | `applyPatch(otherDoc, diff)` (lenient mode optional) |
-| Diff a multi-gigabyte file without loading it all | `createEngine()` + `pushLeft/pushRight` chunks |
+| Diff a large file fed in chunks (file stream, socket) | `createEngine()` + `pushLeft/pushRight` chunks |
 | Diff JSON in a Web Worker so the UI stays at 60fps | `import { DiffCoreWorker } from "diffcore/worker"` |
 
 ---
@@ -257,7 +258,12 @@ npx diffcore before.json after.json --silent     # exit 0/1 only — perfect for
 
 Exit codes: `0` = identical, `1` = different, `2` = error.
 
-### Streaming (large files)
+### Chunked input (large files)
+
+Feed each side in as many chunks as you like — from a file stream, a socket,
+or a series of `fetch()` reads. Chunks accumulate into a WASM-managed buffer
+and the document is parsed exactly once, on `finalize()`. The buffer is capped
+at `maxInputSize` (default 64 MB; raise it for bigger documents).
 
 ```ts
 import { createReadStream } from "node:fs";
@@ -266,15 +272,19 @@ import { createEngine, Status } from "diffcore";
 const engine = await createEngine({ maxInputSize: 256 * 1024 * 1024 });
 
 for await (const chunk of createReadStream("before.json")) {
-  if (engine.pushLeft(chunk) !== Status.Ok) throw new Error("left push failed");
+  if (engine.pushLeft(chunk) !== Status.Ok) throw new Error("left input too large");
 }
 for await (const chunk of createReadStream("after.json")) {
-  if (engine.pushRight(chunk) !== Status.Ok) throw new Error("right push failed");
+  if (engine.pushRight(chunk) !== Status.Ok) throw new Error("right input too large");
 }
 
-const result = engine.finalize();
+const result = engine.finalize();   // both sides parsed + diffed here
 // Memory is freed automatically when `engine` is garbage collected.
 ```
+
+`pushLeft` / `pushRight` return `Status.Error` only when a chunk would overflow
+the per-side capacity (`maxInputSize / 2`); a malformed-JSON error surfaces from
+`finalize()`. The chunk count and chunk sizes never affect the result.
 
 ---
 
@@ -289,7 +299,7 @@ Measured on a recent x86 laptop with the `Throughput` compute mode, against the 
 | 5 MB    | ~415 MB/s | 90.7 ms  | 23.5 ms  | **3.9×** |
 | 10 MB   | ~360 MB/s | 224.5 ms | 54.5 ms  | **4.1×** |
 
-`diffcore` parses raw bytes and diffs in a single streaming pass — no full object tree is built.
+`diffcore` parses raw UTF-8 bytes and diffs in a single linear pass — no intermediate object tree is built.
 
 Reproduce: `npm run build && node bench/run.mjs`.
 
@@ -497,8 +507,8 @@ No — WASM is the speed source. If you need a pure-JS fallback, use `jsondiffpa
 **Is `diff()` deterministic?**
 Yes for the same inputs and config.
 
-**Does it handle Unicode in keys and values?**
-Yes — keys and values are treated as UTF-8 throughout. JSON escapes (`\n`, `é`, etc.) round-trip correctly.
+**Does it handle Unicode and escaped characters in keys and values?**
+Yes — keys and values are treated as UTF-8 throughout. JSON escape sequences (`\n`, `\t`, `\uXXXX`, `é`) round-trip correctly, and **escaped quotes (`\"`) inside keys or string values parse correctly** — a long-standing parser bug fixed in v1.3.0.
 
 **How big is the bundle?**
 ~38 KB of WASM + ~10 KB of JS, both minified. The state primitives (`diffcore/state`) and React hook (`diffcore/react`) are tree-shakeable subpath exports.
@@ -506,8 +516,8 @@ Yes — keys and values are treated as UTF-8 throughout. JSON escapes (`\n`, `é
 **How fast is it really?**
 ~55 ms for a 10 MB JSON diff (parse + diff in a single pass). 3–4× faster than handwritten JS. See [Performance](#performance) for the full benchmark grid.
 
-**Does it stream true zero-copy across chunks?**
-Yes — `pushLeft` / `pushRight` write directly into a WASM-managed buffer via DMA. No `_malloc` per chunk.
+**Can I feed input in chunks?**
+Yes — `pushLeft` / `pushRight` write directly into a WASM-managed buffer (no `_malloc` per chunk). Chunks accumulate and the document is parsed once, on `finalize()`, so chunk count and size never change the result. The buffer is capped at `maxInputSize`.
 
 **How do I get a colored diff in the terminal?**
 `npx diffcore before.json after.json`. Or programmatically: `formatDiff(result, { color: true })`.

@@ -64,17 +64,26 @@ export declare class DiffEngine {
     private rightInputPtr;
     private leftWritten;
     private rightWritten;
+    private committed;
     private resolvePaths;
     private ignore?;
     private scope?;
     private leftBuffer;
     private rightBuffer;
+    /** Per-side input capacity in bytes (the engine splits `maxInputSize` in two). */
+    private sideCapacity;
     /** @internal use `createEngine()`. */
     constructor(wasm: WasmExports, config?: DiffCoreConfig);
     private allocAndWrite;
-    /** Push a chunk of the left (original) JSON document. */
+    /**
+     * Push a chunk of the left (original) JSON document.
+     *
+     * Chunks accumulate into a WASM-managed buffer; the document is parsed
+     * once, on `finalize()`. Returns `Status.Error` only if the chunk would
+     * overflow the per-side input capacity (`maxInputSize / 2`).
+     */
     pushLeft(chunk: Uint8Array): Status;
-    /** Push a chunk of the right (modified) JSON document. */
+    /** Push a chunk of the right (modified) JSON document. See {@link pushLeft}. */
     pushRight(chunk: Uint8Array): Status;
     /** Finalize the diff and return resolved entries. */
     finalize(): DiffResult;

@@ -157,22 +157,45 @@ impl CompactParser {
                     after_colon = false;
                     let start = pos + 1;
                     i += 1;
-                    
-                    // Fast skip to closing quote
+
+                    // Scan to the *unescaped* closing quote. The SIMD
+                    // structural index records every `"` byte, including
+                    // quotes escaped inside a string literal (`\"`). A naive
+                    // scan stops at the first `"` it sees and mis-parses any
+                    // key or value containing an escaped quote — which
+                    // desyncs every path hash for the rest of the document.
+                    // A quote is a real terminator only when preceded by an
+                    // even-length run of backslashes.
                     while i < len {
                         let next_pos = positions[i] as usize;
                         if unsafe { *json.get_unchecked(next_pos) } == b'"' {
+                            let mut bs = next_pos;
+                            while bs > start
+                                && unsafe { *json.get_unchecked(bs - 1) } == b'\\'
+                            {
+                                bs -= 1;
+                            }
+                            if (next_pos - bs) & 1 == 1 {
+                                // Escaped quote — part of the string body.
+                                i += 1;
+                                continue;
+                            }
+
                             let s_bytes = unsafe { json.get_unchecked(start..next_pos) };
-                            
+
                             if self.expecting_key {
+                                self.key_count = self.key_count.saturating_add(1);
+                                if self.key_count > self.max_object_keys {
+                                    return Err(ParseError::ObjectKeyLimitExceeded);
+                                }
                                 let parent = *self.path_stack.last().unwrap_or(&ROOT_PATH_ID);
                                 self.current_path_id = fold_segment_hash(parent, s_bytes);
                             } else {
                                 self.push_token(
-                                    self.current_path_id, 
-                                    CompactEvent::Value, 
-                                    hash_bytes_simd(s_bytes), 
-                                    start as u32, 
+                                    self.current_path_id,
+                                    CompactEvent::Value,
+                                    hash_bytes_simd(s_bytes),
+                                    start as u32,
                                     (next_pos - start) as u32
                                 );
                             }
@@ -314,28 +337,36 @@ fn find_primitive_end(json: &[u8], start: usize, max_end: usize) -> usize {
 }
 
 /// SIMD-accelerated value hash for world-class throughput.
+///
+/// Each 16-byte block is folded with a multiply-then-xor step so the result
+/// is *order-dependent*. A plain XOR fold (the previous implementation) is
+/// commutative: any permutation of a value's 16-byte blocks collided to the
+/// same hash, which could make the diff engine miss a real change.
 #[inline(always)]
 pub fn hash_bytes_simd(bytes: &[u8]) -> u64 {
     if bytes.len() >= 16 {
         let len = bytes.len();
         let mut ptr = bytes.as_ptr();
         let end = unsafe { ptr.add(len & !15) };
-        
+
+        let prime = u64x2_splat(0x100000001b3);
         let mut acc = unsafe { v128_load(ptr as *const v128) };
         ptr = unsafe { ptr.add(16) };
-        
+
         while ptr < end {
             let chunk = unsafe { v128_load(ptr as *const v128) };
+            // Position-sensitive mix: multiply the accumulator, then xor in
+            // the next block. Two values that share the same set of blocks in
+            // a different order now hash differently.
+            acc = i64x2_mul(acc, prime);
             acc = v128_xor(acc, chunk);
             ptr = unsafe { ptr.add(16) };
         }
-        
-        let lanes = [
-            u64x2_extract_lane::<0>(acc),
-            u64x2_extract_lane::<1>(acc)
-        ];
-        let mut hash = lanes[0] ^ lanes[1] ^ (len as u64);
-        
+
+        let lane0 = u64x2_extract_lane::<0>(acc);
+        let lane1 = u64x2_extract_lane::<1>(acc);
+        let mut hash = lane0 ^ lane1.rotate_left(32) ^ (len as u64);
+
         // Tail
         for &b in &bytes[len & !15..] {
             hash ^= b as u64;
