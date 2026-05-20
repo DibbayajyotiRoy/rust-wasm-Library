@@ -12,8 +12,6 @@ pub struct Engine {
     right_parser: CompactParser,
     error: ErrorBuffer,
     sealed: bool,
-    max_input_size: u32,
-    symbol_buffer: Vec<u8>,
     left_input: Vec<u8>,
     right_input: Vec<u8>,
     left_index: crate::simd_index::StructuralIndex,
@@ -30,8 +28,6 @@ impl Engine {
             right_parser: CompactParser::new(config.max_object_keys, config.compute_mode),
             error: ErrorBuffer::new(),
             sealed: false,
-            max_input_size: config.max_input_size,
-            symbol_buffer: Vec::with_capacity(1024),
             left_input: Vec::with_capacity(input_cap),
             right_input: Vec::with_capacity(input_cap),
             left_index: crate::simd_index::StructuralIndex::new(),
@@ -39,16 +35,8 @@ impl Engine {
         })
     }
 
-    pub fn set_path_filter(&mut self, _filter: Option<String>) {
-        // Path filtering is deprecated in Silicon Path (O(1) diffing handles it better)
-    }
-
     pub fn magic(&self) -> u32 { self.magic }
     pub fn clear_magic(&mut self) { self.magic = 0; }
-
-    pub fn push_left(&mut self, _chunk: &[u8]) -> Status {
-        Status::Error // Direct DMA (commit_left) only for Silicon Path
-    }
 
     pub fn commit_left(&mut self, len: u32) -> Status {
         if self.sealed { return Status::EngineSealed; }
@@ -61,10 +49,6 @@ impl Engine {
             Ok(_) => Status::Ok,
             Err(_) => Status::Error,
         }
-    }
-
-    pub fn push_right(&mut self, _chunk: &[u8]) -> Status {
-        Status::Error
     }
 
     pub fn commit_right(&mut self, len: u32) -> Status {
@@ -105,22 +89,12 @@ impl Engine {
         self.left_parser.clear();
         self.right_parser.clear();
         self.sealed = false;
-        self.symbol_buffer.clear();
     }
 
     pub fn left_input_ptr(&mut self) -> *mut u8 { self.left_input.as_mut_ptr() }
     pub fn right_input_ptr(&mut self) -> *mut u8 { self.right_input.as_mut_ptr() }
 
-    pub fn resolve_symbol(&mut self, _path_id: crate::path::PathId) -> (*const u8, u32) {
-        (std::ptr::null(), 0) // Path resolution moved to client side (symbolic hashes)
-    }
-
-    pub fn batch_resolve_symbols(&mut self) -> (*const u8, u32) {
-        (std::ptr::null(), 0)
-    }
-
     pub fn result_len(&self) -> u32 { self.arena.len() }
-    pub fn symbol_buffer_len(&self) -> u32 { 0 }
     pub fn last_error_len(&self) -> u32 { self.error.len() }
     pub fn last_error_ptr(&self) -> *const u8 { self.error.as_ptr() }
 }

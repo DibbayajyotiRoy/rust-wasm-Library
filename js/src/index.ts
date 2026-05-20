@@ -187,13 +187,14 @@ function resolveEntries(
         const leftPresent  = e.op === DiffOp.Modified || e.op === DiffOp.Removed;
         const rightPresent = e.op === DiffOp.Modified || e.op === DiffOp.Added;
 
-        let info: LeafInfo | undefined;
-        if (leftPresent && leftIndex) info = leftIndex.byPathId.get(e.pathId);
-        if (!info && rightPresent && rightIndex) info = rightIndex.byPathId.get(e.pathId);
-
-        const path = info
-            ? info.pointer
-            : `#hash:${e.pathId.toString(16).padStart(16, "0")}`;
+        // Look the leaf up on each side independently so a leaf that changes
+        // type (e.g. string -> number under the same path) gets the correct
+        // `isString` flag per side. Using one side's flag for both was the
+        // bug that surfaced when a root scalar's type changed.
+        const leftInfo  = leftPresent  && leftIndex  ? leftIndex.byPathId.get(e.pathId)  : undefined;
+        const rightInfo = rightPresent && rightIndex ? rightIndex.byPathId.get(e.pathId) : undefined;
+        const pointer = leftInfo?.pointer ?? rightInfo?.pointer;
+        const path = pointer ?? `#hash:${e.pathId.toString(16).padStart(16, "0")}`;
 
         let leftValue: JsonScalar | undefined;
         let rightValue: JsonScalar | undefined;
@@ -202,12 +203,12 @@ function resolveEntries(
 
         if (leftPresent && leftBytes) {
             leftSlice = leftBytes.subarray(e.leftOffset, e.leftOffset + e.leftLen);
-            if (info) leftValue = decodeLeafValue(leftBytes, { ...info, valueOffset: e.leftOffset, valueLen: e.leftLen });
+            if (leftInfo) leftValue = decodeLeafValue(leftBytes, { ...leftInfo, valueOffset: e.leftOffset, valueLen: e.leftLen });
             else leftValue = new TextDecoder().decode(leftSlice);
         }
         if (rightPresent && rightBytes) {
             rightSlice = rightBytes.subarray(e.rightOffset, e.rightOffset + e.rightLen);
-            if (info) rightValue = decodeLeafValue(rightBytes, { ...info, valueOffset: e.rightOffset, valueLen: e.rightLen });
+            if (rightInfo) rightValue = decodeLeafValue(rightBytes, { ...rightInfo, valueOffset: e.rightOffset, valueLen: e.rightLen });
             else rightValue = new TextDecoder().decode(rightSlice);
         }
 

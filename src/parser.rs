@@ -44,7 +44,6 @@ pub struct CompactParser {
     expecting_key: bool,
     max_object_keys: u32,
     key_count: u32,
-    total_bytes: u32,
 }
 
 impl CompactParser {
@@ -63,21 +62,41 @@ impl CompactParser {
             expecting_key: false,
             max_object_keys,
             key_count: 0,
-            total_bytes: 0,
         }
     }
-
-    pub fn set_chunk_base(&mut self, _offset: u32) { }
 
     /// Silicon Path Dispatcher: Processes structural index positions only.
     #[inline(never)]
     pub fn parse_with_index(
-        &mut self, 
-        json: &[u8], 
+        &mut self,
+        json: &[u8],
         index: &crate::simd_index::StructuralIndex,
     ) -> Result<(), ParseError> {
-        if json.is_empty() || index.positions.is_empty() { return Ok(()); }
-        
+        if json.is_empty() { return Ok(()); }
+
+        // Bare-primitive document root (e.g. `42`, `true`, `null`): the SIMD
+        // structural index records no positions because the document contains
+        // no `{ } [ ] : , "` bytes. Without this branch, one side of a
+        // root-scalar diff would have zero Value tokens and the diff would
+        // wrongly report the other side as Removed.
+        if index.positions.is_empty() {
+            let start = skip_whitespace(json, 0, json.len());
+            if start < json.len() {
+                let end = find_primitive_end(json, start, json.len());
+                if end > start {
+                    let val = unsafe { json.get_unchecked(start..end) };
+                    self.push_token(
+                        ROOT_PATH_ID,
+                        CompactEvent::Value,
+                        hash_bytes_simd(val),
+                        start as u32,
+                        (end - start) as u32,
+                    );
+                }
+            }
+            return Ok(());
+        }
+
         let mut i = 0;
         let positions = &index.positions;
         let len = positions.len();
@@ -282,8 +301,7 @@ impl CompactParser {
                 _ => { i += 1; }
             }
         }
-        
-        self.total_bytes = self.total_bytes.saturating_add(json.len() as u32);
+
         Ok(())
     }
 
@@ -295,7 +313,6 @@ impl CompactParser {
         self.container_is_array.clear();
         self.expecting_key = false;
         self.key_count = 0;
-        self.total_bytes = 0;
     }
 
     #[inline(always)]
@@ -303,7 +320,6 @@ impl CompactParser {
         self.tokens.push(CompactToken { path_id, event, value_hash: hash, raw_offset: offset, raw_len: len });
     }
 
-    pub fn total_bytes(&self) -> u32 { self.total_bytes }
     pub fn tokens(&self) -> &[CompactToken] { &self.tokens }
 }
 

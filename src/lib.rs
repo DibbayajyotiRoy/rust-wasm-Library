@@ -54,65 +54,6 @@ pub extern "C" fn create_engine(config_ptr: *const u8, config_len: u32) -> *mut 
     }
 }
 
-/// Push a chunk of the left (original) JSON document.
-///
-/// # Safety
-/// `engine_ptr` must be a valid pointer returned by `create_engine`.
-#[no_mangle]
-pub extern "C" fn push_left(engine_ptr: *mut Engine, chunk_ptr: *const u8, chunk_len: u32) -> Status {
-    let engine = match validate_engine(engine_ptr) {
-        Some(e) => e,
-        None => return Status::InvalidHandle,
-    };
-
-    if chunk_ptr.is_null() {
-        return Status::Error;
-    }
-
-    let chunk = unsafe { std::slice::from_raw_parts(chunk_ptr, chunk_len as usize) };
-    engine.push_left(chunk)
-}
-
-/// Push a chunk of the right (modified) JSON document.
-///
-/// # Safety
-/// `engine_ptr` must be a valid pointer returned by `create_engine`.
-#[no_mangle]
-pub extern "C" fn push_right(engine_ptr: *mut Engine, chunk_ptr: *const u8, chunk_len: u32) -> Status {
-    let engine = match validate_engine(engine_ptr) {
-        Some(e) => e,
-        None => return Status::InvalidHandle,
-    };
-
-    if chunk_ptr.is_null() {
-        return Status::Error;
-    }
-
-    let chunk = unsafe { std::slice::from_raw_parts(chunk_ptr, chunk_len as usize) };
-    engine.push_right(chunk)
-}
-
-/// Set a path filter (e.g. "spec.containers") to prune unrelated JSON subtrees.
-/// Null pointer or zero length clears the filter.
-#[no_mangle]
-pub extern "C" fn set_path_filter(engine_ptr: *mut Engine, ptr: *const u8, len: u32) -> Status {
-    let engine = match validate_engine(engine_ptr) {
-        Some(e) => e,
-        None => return Status::InvalidHandle,
-    };
-
-    if ptr.is_null() || len == 0 {
-        engine.set_path_filter(None);
-    } else {
-        let filter = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
-        match std::str::from_utf8(filter) {
-            Ok(s) => engine.set_path_filter(Some(s.to_string())),
-            Err(_) => return Status::Error,
-        }
-    }
-    Status::Ok
-}
-
 /// Signal that N bytes have been written into the managed left input buffer.
 #[no_mangle]
 pub extern "C" fn commit_left(engine_ptr: *mut Engine, len: u32) -> Status {
@@ -217,45 +158,6 @@ pub extern "C" fn clear_engine(engine_ptr: *mut Engine) -> Status {
     Status::Ok
 }
 
-/// Perform lazy resolution of a SymbolId (PathId) into a string pointer.
-/// 
-/// The returned pointer is valid until the next call to any symbolize* function
-/// or until the engine is cleared/destroyed.
-#[no_mangle]
-pub extern "C" fn resolve_path_symbol(engine_ptr: *mut Engine, path_id: u64) -> *const u8 {
-    let engine = match validate_engine(engine_ptr) {
-        Some(e) => e,
-        None => return std::ptr::null(),
-    };
-
-    let (ptr, _) = engine.resolve_symbol(crate::path::PathId(path_id));
-    ptr
-}
-
-/// Get the length of the string materialized by resolve_path_symbol.
-#[no_mangle]
-pub extern "C" fn get_symbol_len(engine_ptr: *mut Engine) -> u32 {
-    let engine = match validate_engine(engine_ptr) {
-        Some(e) => e,
-        None => return 0,
-    };
-
-    engine.symbol_buffer_len()
-}
-
-/// Perform batch resolution of all symbols into a single buffer.
-/// Format: [u32 count][(u32 len, utf8 bytes) x count]
-#[no_mangle]
-pub extern "C" fn batch_resolve_symbols(engine_ptr: *mut Engine) -> *const u8 {
-    let engine = match validate_engine(engine_ptr) {
-        Some(e) => e,
-        None => return std::ptr::null(),
-    };
-
-    let (ptr, _) = engine.batch_resolve_symbols();
-    ptr
-}
-
 /// Get pointer to the last error message.
 #[no_mangle]
 pub extern "C" fn get_last_error(engine_ptr: *const Engine) -> *const u8 {
@@ -275,35 +177,6 @@ pub extern "C" fn get_last_error_len(engine_ptr: *const Engine) -> u32 {
         None => return 0,
     };
     engine.last_error_len()
-}
-
-/// Allocate memory for the host to write input data.
-// --- Internal Memory Management (Hidden from Public ABI) ---
-
-const ALLOC_MAGIC: u32 = 0xDEADC0DE;
-
-#[export_name = "_internal_alloc"]
-pub extern "C" fn alloc(len: u32) -> *mut u8 {
-    let cap = 8 + len as usize;
-    let mut buf = Vec::<u8>::with_capacity(cap);
-    let ptr = buf.as_mut_ptr();
-    unsafe {
-        std::ptr::write_unaligned(ptr as *mut u32, ALLOC_MAGIC);
-        std::ptr::write_unaligned(ptr.add(4) as *mut u32, cap as u32);
-    }
-    std::mem::forget(buf);
-    unsafe { ptr.add(8) }
-}
-
-#[export_name = "_internal_dealloc"]
-pub extern "C" fn dealloc(ptr: *mut u8, _len: u32) {
-    if ptr.is_null() { return; }
-    unsafe {
-        let base = ptr.sub(8);
-        if std::ptr::read_unaligned(base as *const u32) != ALLOC_MAGIC { return; }
-        let cap = std::ptr::read_unaligned(base.add(4) as *const u32) as usize;
-        let _ = Vec::from_raw_parts(base, 0, cap);
-    }
 }
 
 // ============================================================================
